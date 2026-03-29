@@ -9,6 +9,13 @@ It has two roles:
 
 `SCCM-Config.ps1` contains the shared ports, intervals, retry settings, and deployment defaults used by both scripts.
 
+The default SMB deployment path is also controlled there through:
+
+- `DefaultSMBSharePath`
+- `SMBShareName`
+- `SMBPolicyHost`
+- `DeployExeName`
+
 ## What It Simulates
 
 The listener exposes these endpoints:
@@ -146,7 +153,7 @@ Notes:
 
 - `-ServeSMBPolicy` enables the stage-2 behavior: the listener creates the SMB share and returns deployment content from `/ccm_system/request`.
 - `-ExeName` is normalized to a `.cmd` script if another extension is supplied.
-- `-PolicyHost` controls the host part placed in the policy `CommandLine` UNC path. If you do not set it, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
+- `-PolicyHost` overrides `SMBPolicyHost` from the config and controls the host part placed in the policy `CommandLine` UNC path. If neither is set, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
 - `-ClientStartupGpoName` controls the dedicated computer-startup GPO that the server refreshes each run.
 - `-ClientInstallRoot` controls where the startup script copies the client locally on each machine before launching it.
 - The generated deployment file is a simple command script that appends to `C:\sccm_deployed.log`.
@@ -195,7 +202,9 @@ Current defaults from `SCCM-Config.ps1`:
 - notification interval: `30` seconds
 - update scan interval: `60` seconds
 - heartbeat interval: `120` seconds
+- deployment share path: `C:\SCCMDeploy`
 - deployment share name: `SCCMDeploy`
+- deployment policy host: auto-detect unless `SMBPolicyHost` is set
 - deployment file name: `sccm_update.cmd`
 - generated deployment file size: `64` KB
 - padded location response entries: `8`

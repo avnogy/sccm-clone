@@ -29,6 +29,8 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 if ($ShareName) { $SMBShareName = $ShareName }
 if ($ExeName) { $DeployExeName = $ExeName }
+if (-not $SMBSharePath) { $SMBSharePath = $DefaultSMBSharePath }
+if (-not $PolicyHost) { $PolicyHost = $SMBPolicyHost }
 if ([System.IO.Path]::GetExtension($DeployExeName) -notin @(".cmd", ".bat")) {
     $DeployExeName = [System.IO.Path]::ChangeExtension($DeployExeName, ".cmd")
 }
@@ -245,7 +247,7 @@ function New-SMBShare {
     param([string]$SharePath, [string]$ShareName)
     
     if (-not $SharePath) {
-        $SharePath = Join-Path $env:SystemDrive "SCCMDeploy"
+        $SharePath = $SMBSharePath
     }
     
     if (-not (Test-Path $SharePath)) {
