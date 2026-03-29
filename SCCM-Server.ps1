@@ -120,6 +120,38 @@ function New-PaddedXmlEntries {
     return $builder.ToString()
 }
 
+function Get-FileSha256 {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        return ""
+    }
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            return ([BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "")
+        } finally {
+            $stream.Dispose()
+        }
+    } finally {
+        $sha256.Dispose()
+    }
+}
+
+function Get-ClientPackageMetadataXml {
+    $clientHash = Get-FileSha256 -Path $script:ClientSourcePath
+    $configHash = Get-FileSha256 -Path $script:ConfigSourcePath
+
+    return @"
+    <ClientPackage>
+        <ClientScriptHash>$clientHash</ClientScriptHash>
+        <ConfigHash>$configHash</ConfigHash>
+    </ClientPackage>
+"@
+}
+
 function Get-DeploymentClientKey {
     param([System.Net.HttpListenerRequest]$Request)
 
@@ -482,6 +514,7 @@ $mpHistory    </Capabilities>
             "/ccm_system/request" {
                 if ($request.HttpMethod -eq "POST") {
                     $policyAssignments = New-PaddedXmlEntries -ElementName "AssignmentID" -Count $PolicyResponsePaddingEntries -Prefix "ADV"
+                    $clientPackageMetadata = Get-ClientPackageMetadataXml
                     $deploymentClientKey = Get-DeploymentClientKey -Request $request
                     $shouldSendDeployment = $script:EnableSMB -and -not $script:DeploymentAssignments.ContainsKey($deploymentClientKey)
 
@@ -500,6 +533,7 @@ $mpHistory    </Capabilities>
         <RequireUserInteraction>false</RequireUserInteraction>
         <RunMode>Elevated</RunMode>
     </SoftwareDeployment>
+$clientPackageMetadata
     <Assignments>
 $policyAssignments    </Assignments>
     <returnValue>0</returnValue>
@@ -515,6 +549,7 @@ $policyAssignments    </Assignments>
                     } else {
                         $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
 <CCM_MethodResult xmlns=`"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/02/01/CCM_BaseClasses`">
+$clientPackageMetadata
     <Assignments>
 $policyAssignments    </Assignments>
     <returnValue>0</returnValue>

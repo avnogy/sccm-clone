@@ -179,6 +179,8 @@ Notes:
 - initializes its timers so the first cycle is sent immediately
 - always requests policy content and inspects it for deployment data
 - automatically executes SMB deployment content whenever the returned policy includes a `CommandLine` path
+- compares the server-advertised client and config hashes before pulling updated files from SYSVOL
+- refreshes its local client/config files from SYSVOL and restarts itself only when those hashes change
 - ignores later identical deployment paths after it has already handled them once in that client process
 
 ### Client Options
@@ -195,6 +197,7 @@ Notes:
 - there is no client-side deployment flag; deployment behavior is controlled entirely by the server response
 - `-ServerHost` is the simplest way to run several lab clients against one known listener
 - the client avoids re-running the exact same deployment path over and over during one session
+- client self-update checks ride on the normal policy response, so there is no extra SMB pull when the published hashes have not changed
 - `.cmd` and `.bat` payloads are executed via `cmd.exe`
 
 ## Default Configuration
@@ -206,16 +209,15 @@ Current defaults from `SCCM-Config.ps1`:
 - HTTP SUP: `8530`
 - HTTPS SUP: `8531`
 - notification TCP: `10123`
-- location request interval: `30` seconds
-- policy request interval: `60` seconds
-- notification interval: `30` seconds
-- update scan interval: `60` seconds
-- heartbeat interval: `120` seconds
+- location request interval: `60` seconds
+- policy request interval: `120` seconds
+- notification interval: `60` seconds
+- update scan interval: `120` seconds
+- heartbeat interval: `240` seconds
 - deployment share path: `C:\SCCMDeploy`
 - deployment share name: `SCCMDeploy`
 - deployment policy host: `SMBPolicyHost` from config, otherwise auto-detect
-- deployment file name: `sccm_update.cmd`
-- generated deployment file size: `64` KB
+- deployment file name: `sccm_update.exe`
 - padded location response entries: `8`
 - padded policy response entries: `20`
 - padded update response entries: `16`

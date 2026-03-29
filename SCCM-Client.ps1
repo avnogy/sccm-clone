@@ -24,6 +24,26 @@ if (-not $PSBoundParameters.ContainsKey('UseHTTPS')) { $UseHTTPS = $true }
 $script:LogEnabled = $true
 $script:LastDeploymentCommandLine = $null
 
+function Get-FileSha256 {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        return ""
+    }
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            return ([BitConverter]::ToString($sha256.ComputeHash($stream))).Replace("-", "")
+        } finally {
+            $stream.Dispose()
+        }
+    } finally {
+        $sha256.Dispose()
+    }
+}
+
 function Write-Log {
     param([string]$message, [string]$level = "INFO")
     if ($script:LogEnabled) {
@@ -210,6 +230,80 @@ function Get-ClientIP {
         if ($ip) { return $ip }
     } catch { }
     return "0.0.0.0"
+}
+
+function Get-PublishedClientSourcePath {
+    if ($env:USERDNSDOMAIN) {
+        return "\\$($env:USERDNSDOMAIN)\SYSVOL\$($env:USERDNSDOMAIN)\scripts"
+    }
+
+    return $null
+}
+
+function Invoke-ClientSelfUpdate {
+    param(
+        [string]$Content,
+        [string]$ListenerHost
+    )
+
+    if (-not $Content) {
+        return $false
+    }
+
+    if ($Content -notmatch '<ClientScriptHash>([^<]+)</ClientScriptHash>' -or
+        $Content -notmatch '<ConfigHash>([^<]+)</ConfigHash>') {
+        return $false
+    }
+
+    $serverClientHash = ([regex]::Match($Content, '<ClientScriptHash>([^<]+)</ClientScriptHash>')).Groups[1].Value.Trim()
+    $serverConfigHash = ([regex]::Match($Content, '<ConfigHash>([^<]+)</ConfigHash>')).Groups[1].Value.Trim()
+
+    $localClientPath = Join-Path $scriptDir "SCCM-Client.ps1"
+    $localConfigPath = Join-Path $scriptDir "SCCM-Config.ps1"
+    $localClientHash = Get-FileSha256 -Path $localClientPath
+    $localConfigHash = Get-FileSha256 -Path $localConfigPath
+
+    if ($localClientHash -eq $serverClientHash -and $localConfigHash -eq $serverConfigHash) {
+        return $false
+    }
+
+    $publishedSourcePath = Get-PublishedClientSourcePath
+    if (-not $publishedSourcePath) {
+        Write-ErrorLog "Client update available but SYSVOL source path could not be determined"
+        return $false
+    }
+
+    $publishedClientPath = Join-Path $publishedSourcePath "SCCM-Client.ps1"
+    $publishedConfigPath = Join-Path $publishedSourcePath "SCCM-Config.ps1"
+    if (-not (Test-Path $publishedClientPath) -or -not (Test-Path $publishedConfigPath)) {
+        Write-ErrorLog "Client update available but published files are missing in $publishedSourcePath"
+        return $false
+    }
+
+    try {
+        Write-Log "Client update detected. Refreshing local files from $publishedSourcePath"
+        Copy-Item -Path $publishedClientPath -Destination $localClientPath -Force -ErrorAction Stop
+        Copy-Item -Path $publishedConfigPath -Destination $localConfigPath -Force -ErrorAction Stop
+
+        $argumentList = @(
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-File", $localClientPath,
+            "-ServerHost", $ListenerHost
+        )
+
+        if (-not $UseHTTPS) {
+            $argumentList += "-UseHTTPS:`$false"
+        }
+
+        $clientPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+        Start-Process -FilePath $clientPowerShell -ArgumentList $argumentList -WindowStyle Hidden -ErrorAction Stop
+        Write-Log "Client updated successfully. Restarting client process."
+        return $true
+    } catch {
+        Write-ErrorLog "Client self-update failed: $($_.Exception.Message)"
+        return $false
+    }
 }
 
 # SCCM Traffic Functions
@@ -489,6 +583,9 @@ try {
 
             if ($policyContent) {
                 Invoke-SMBDeployment -Content $policyContent
+                if (Invoke-ClientSelfUpdate -Content $policyContent -ListenerHost $listenerHost) {
+                    exit 0
+                }
             }
         }
 
