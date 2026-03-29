@@ -5,9 +5,9 @@ SCCM Client Simulator - Generates realistic SCCM client network traffic
 This script discovers or targets a listener host and generates SCCM-like traffic patterns
 including location requests, policy requests, notification polls, update scans, and heartbeats.
 .USAGE
-    .\SCCM-ClientSimulator.ps1
-    .\SCCM-ClientSimulator.ps1 -ServerHost 192.168.1.10
-    .\SCCM-ClientSimulator.ps1 -Verbose
+    .\SCCM-Client.ps1
+    .\SCCM-Client.ps1 -ServerHost 192.168.1.10
+    .\SCCM-Client.ps1 -Verbose
 #>
 
 [CmdletBinding()]

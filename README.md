@@ -4,8 +4,8 @@ This repo is a PowerShell-based lab setup for generating SCCM-like traffic for p
 
 It has two roles:
 
-- `SCCM-Listener.ps1`: mock Management Point / Software Update Point / notification listener
-- `SCCM-ClientSimulator.ps1`: mock SCCM client that continuously generates recurring traffic
+- `SCCM-Server.ps1`: mock Management Point / Software Update Point / notification listener
+- `SCCM-Client.ps1`: mock SCCM client that continuously generates recurring traffic
 
 `SCCM-Config.ps1` contains the shared ports, intervals, retry settings, and deployment defaults used by both scripts.
 
@@ -31,7 +31,7 @@ The client simulator generates:
 ## Requirements
 
 - Windows PowerShell or PowerShell on Windows
-- Administrator privileges for `SCCM-Listener.ps1`
+- Administrator privileges for `SCCM-Server.ps1`
 - A Windows environment with the required features available for:
   - `HttpListener` on privileged ports
   - `New-SmbShare` / `Get-SmbShare`
@@ -46,8 +46,8 @@ The listener does not have to run on an actual Domain Controller. It can run on 
 ## Files
 
 - `SCCM-Config.ps1`: shared configuration
-- `SCCM-Listener.ps1`: mock SCCM server-side listener
-- `SCCM-ClientSimulator.ps1`: mock SCCM client
+- `SCCM-Server.ps1`: mock SCCM server-side listener
+- `SCCM-Client.ps1`: mock SCCM client
 
 ## Recording the Two Stages
 
@@ -68,11 +68,11 @@ Run it like this:
 ```powershell
 # On the listener host, as Administrator
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-Listener.ps1
+.\SCCM-Server.ps1
 
 # On each client
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-ClientSimulator.ps1 -ServerHost 192.168.1.10
+.\SCCM-Client.ps1 -ServerHost 192.168.1.10
 ```
 
 What happens:
@@ -95,14 +95,14 @@ Run it like this:
 ```powershell
 # On the listener host, as Administrator
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-Listener.ps1 -ServeSMBPolicy
+.\SCCM-Server.ps1 -ServeSMBPolicy
 
 # Or, if you want the policy to advertise a specific IP:
-# .\SCCM-Listener.ps1 -ServeSMBPolicy -PolicyHost "192.168.1.10"
+# .\SCCM-Server.ps1 -ServeSMBPolicy -PolicyHost "192.168.1.10"
 
 # On each client
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-ClientSimulator.ps1 -ServerHost 192.168.1.10
+.\SCCM-Client.ps1 -ServerHost 192.168.1.10
 ```
 
 What happens:
@@ -113,7 +113,7 @@ What happens:
 
 ## Listener Behavior
 
-`SCCM-Listener.ps1`:
+`SCCM-Server.ps1`:
 
 - creates or reuses a self-signed certificate for HTTPS listeners
 - binds certificates to ports `443` and `8531`
@@ -126,12 +126,12 @@ What happens:
 ### Listener Options
 
 ```powershell
-.\SCCM-Listener.ps1
-.\SCCM-Listener.ps1 -ServeSMBPolicy
-.\SCCM-Listener.ps1 -ShareName "CustomShare"
-.\SCCM-Listener.ps1 -SMBSharePath "C:\Temp\SCCMDeploy"
-.\SCCM-Listener.ps1 -ExeName "update.cmd"
-.\SCCM-Listener.ps1 -ServeSMBPolicy -PolicyHost "192.168.1.10"
+.\SCCM-Server.ps1
+.\SCCM-Server.ps1 -ServeSMBPolicy
+.\SCCM-Server.ps1 -ShareName "CustomShare"
+.\SCCM-Server.ps1 -SMBSharePath "C:\Temp\SCCMDeploy"
+.\SCCM-Server.ps1 -ExeName "update.cmd"
+.\SCCM-Server.ps1 -ServeSMBPolicy -PolicyHost "192.168.1.10"
 ```
 
 Notes:
@@ -143,7 +143,7 @@ Notes:
 
 ## Client Behavior
 
-`SCCM-ClientSimulator.ps1`:
+`SCCM-Client.ps1`:
 
 - tries several methods to discover a target host
 - can be pointed directly at a listener host with `-ServerHost`
@@ -158,10 +158,10 @@ Notes:
 ### Client Options
 
 ```powershell
-.\SCCM-ClientSimulator.ps1
-.\SCCM-ClientSimulator.ps1 -ServerHost 192.168.1.10
-.\SCCM-ClientSimulator.ps1 -UseHTTPS:$false
-.\SCCM-ClientSimulator.ps1 -Verbose
+.\SCCM-Client.ps1
+.\SCCM-Client.ps1 -ServerHost 192.168.1.10
+.\SCCM-Client.ps1 -UseHTTPS:$false
+.\SCCM-Client.ps1 -Verbose
 ```
 
 Notes:
