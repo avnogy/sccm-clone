@@ -266,7 +266,7 @@ function Send-NotificationPoll {
     param([string]$DC)
     
     try {
-        Write-VerboseLog "Attempting TCP connection to $DC`:$NotifyPort for notification poll"
+        Write-VerboseLog "Attempting TCP connection to ${DC}:${NotifyPort} for notification poll"
         $tcpClient = New-Object System.Net.Sockets.TcpClient
         $asyncResult = $tcpClient.BeginConnect($DC, $NotifyPort, $null, $null)
         $waitHandle = $asyncResult.AsyncWaitHandle
@@ -287,14 +287,14 @@ function Send-NotificationPoll {
             }
             
             $tcpClient.Close()
-            Write-Log "Notification poll sent to TCP $DC`:$NotifyPort - Connection successful"
+            Write-Log "Notification poll sent to TCP ${DC}:${NotifyPort} - Connection successful"
             return $true
         } finally {
             $waitHandle.Dispose()
             if ($tcpClient.Connected) { $tcpClient.Close() }
         }
     } catch {
-        Write-ErrorLog "Notification poll failed to TCP $DC`:$NotifyPort`: $($_.Exception.Message)"
+        Write-ErrorLog "Notification poll failed to TCP ${DC}:${NotifyPort}: $($_.Exception.Message)"
         return $false
     }
 }

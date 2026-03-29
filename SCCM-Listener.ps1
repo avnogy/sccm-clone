@@ -253,12 +253,12 @@ function Handle-HttpRequest {
                     $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
 <LSLocationServices>
     <MPLists>
-        <MPList Value=`"http://$($env:COMPUTERNAME):$HttpPort`"/>
-        <MPList Value=`"https://$($env:COMPUTERNAME):$HttpsPort`"/>
+        <MPList Value=`"http://$($env:COMPUTERNAME):${HttpPort}`"/>
+        <MPList Value=`"https://$($env:COMPUTERNAME):${HttpsPort}`"/>
     </MPLists>
     <SUPLists>
-        <SUPList Value=`"http://$($env:COMPUTERNAME):$SupHttpPort`"/>
-        <SUPList Value=`"https://$($env:COMPUTERNAME):$SupHttpsPort`"/>
+        <SUPList Value=`"http://$($env:COMPUTERNAME):${SupHttpPort}`"/>
+        <SUPList Value=`"https://$($env:COMPUTERNAME):${SupHttpsPort}`"/>
     </SUPLists>
 </LSLocationServices>"
                     $response.ContentType = "application/xml"
