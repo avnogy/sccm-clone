@@ -272,8 +272,9 @@ function Handle-HttpRequest {
             
             "/ccm_system/request" {
                 if ($request.HttpMethod -eq "POST") {
-                    $sMBPath = "\\$($env:COMPUTERNAME)\$script:SMBShareName\$script:DeployExeName"
-                    $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
+                    if ($script:EnableSMB -and $script:SMBShareCreated) {
+                        $sMBPath = "\\$($env:COMPUTERNAME)\$script:SMBShareName\$script:DeployExeName"
+                        $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
 <CCM_Policy xmlns=`"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/02/01/CCM_Policy`">
     <PolicyID>SoftwareDeployment_001</PolicyID>
     <PolicyVersion>1.0</PolicyVersion>
@@ -288,10 +289,19 @@ function Handle-HttpRequest {
     </SoftwareDeployment>
     <returnValue>0</returnValue>
 </CCM_Policy>"
-                    $response.ContentType = "application/xml"
-                    $response.StatusCode = 200
-                    $response.StatusDescription = "OK"
-                    Write-Log "Policy sent with SMB deployment: $sMBPath"
+                        $response.ContentType = "application/xml"
+                        $response.StatusCode = 200
+                        $response.StatusDescription = "OK"
+                        Write-Log "Policy sent with SMB deployment: $sMBPath"
+                    } else {
+                        $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
+<CCM_MethodResult xmlns=`"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/02/01/CCM_BaseClasses`">
+    <returnValue>0</returnValue>
+</CCM_MethodResult>"
+                        $response.ContentType = "application/xml"
+                        $response.StatusCode = 200
+                        $response.StatusDescription = "OK"
+                    }
                 } else {
                     $response.StatusCode = 405
                     $response.StatusDescription = "Method Not Allowed"
