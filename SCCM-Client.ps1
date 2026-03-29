@@ -22,6 +22,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $PSBoundParameters.ContainsKey('UseHTTPS')) { $UseHTTPS = $true }
 
 $script:LogEnabled = $true
+$script:LastDeploymentCommandLine = $null
 
 function Write-Log {
     param([string]$message, [string]$level = "INFO")
@@ -151,11 +152,31 @@ function Invoke-SCCMRequest {
                 $allHeaders[$key] = $Headers[$key]
             }
 
-            if ($Body -and -not $allHeaders.ContainsKey("Content-Type")) {
-                $allHeaders["Content-Type"] = "application/xml; charset=utf-8"
+            $contentType = $null
+            if ($Body -and $allHeaders.ContainsKey("Content-Type")) {
+                $contentType = $allHeaders["Content-Type"]
+                [void]$allHeaders.Remove("Content-Type")
+            } elseif ($Body) {
+                $contentType = "application/xml; charset=utf-8"
             }
 
-            $response = Invoke-WebRequest -Uri $Url -Method $Method -Body $Body -Headers $allHeaders -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
+            $requestParams = @{
+                Uri         = $Url
+                Method      = $Method
+                Headers     = $allHeaders
+                ErrorAction = "Stop"
+                TimeoutSec  = 15
+            }
+
+            if ($Body) {
+                $requestParams["Body"] = $Body
+            }
+
+            if ($contentType) {
+                $requestParams["ContentType"] = $contentType
+            }
+
+            $response = Invoke-WebRequest @requestParams
 
             Write-VerboseLog "Request successful: $($response.StatusCode)"
             return @{
@@ -370,6 +391,11 @@ function Invoke-SMBDeployment {
             $sMBPath = $matches[1].Trim()
             Write-Log "Policy received - SMB deployment: $sMBPath"
 
+            if ($script:LastDeploymentCommandLine -eq $sMBPath) {
+                Write-VerboseLog "Deployment path already executed in this client session"
+                return $true
+            }
+
             if ($sMBPath -match '\\\\([^\\]+)\\([^\\]+)\\(.+)') {
                 $server = $matches[1]
                 $share = $matches[2]
@@ -391,6 +417,7 @@ function Invoke-SMBDeployment {
                         $process = Start-Process -FilePath $localPath -NoNewWindow -PassThru -ErrorAction Stop
                     }
 
+                    $script:LastDeploymentCommandLine = $sMBPath
                     Write-Log "Deployment executed successfully (PID: $($process.Id))"
                     return $true
                 } catch {

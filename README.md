@@ -110,6 +110,7 @@ What happens:
 - the listener creates the SMB share and deployment script
 - the policy response includes a `CommandLine` UNC path of the form `\\IP\Share\file`
 - every client requests policy, recognizes the deployment path in the response, copies the file over SMB, and executes it
+- each client executes a given deployment path once per client process lifetime, which prevents the same payload from re-running every policy interval
 
 ## Listener Behavior
 
@@ -168,6 +169,7 @@ Notes:
 
 - there is no client-side deployment flag; deployment behavior is controlled entirely by the server response
 - `-ServerHost` is the simplest way to run several lab clients against one known listener
+- the client avoids re-running the exact same deployment path over and over during one session
 - `.cmd` and `.bat` payloads are executed via `cmd.exe`
 
 ## Default Configuration

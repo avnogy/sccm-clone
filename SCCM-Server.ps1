@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-SCCM Listener - Simulates SCCM site system roles for generating network traffic
+SCCM Server Simulator - Simulates SCCM site system roles for generating network traffic
 .DESCRIPTION
 This script listens on common SCCM ports and responds with appropriate mock responses
 to simulate Management Point, Software Update Point, and other SCCM roles.
