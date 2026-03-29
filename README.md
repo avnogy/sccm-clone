@@ -127,7 +127,8 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 What happens:
 
 - the listener creates the SMB share and deployment script
-- the policy response includes a `CommandLine` UNC path of the form `\\IP\Share\file`
+- the first stage-2 policy response for each client includes a `CommandLine` UNC path of the form `\\IP\Share\file`
+- the server sends that deployment policy once per client per server run
 - every client requests policy, recognizes the deployment path in the response, copies the file over SMB, and executes it
 - each client executes a given deployment path once per client process lifetime, which prevents the same payload from re-running every policy interval
 - the server refreshes the domain startup deployment so rebooted domain computers pick up the latest client version automatically
@@ -140,7 +141,7 @@ What happens:
 - binds certificates to ports `443` and `8531`
 - starts listeners on the configured HTTP, HTTPS, SUP, and notification ports
 - serves normal SCCM-like policy responses by default
-- creates an SMB share and returns deployment policy content only when `-ServeSMBPolicy` is used
+- creates an SMB share and sends one SMB deployment policy per client only when `-ServeSMBPolicy` is used
 - refreshes a dedicated domain computer-startup GPO on each run so the latest client script is published into SYSVOL
 - logs inbound requests and returns mock SCCM-style responses
 - cleans up listeners, certificate bindings, and the SMB share on exit
@@ -160,7 +161,7 @@ What happens:
 
 Notes:
 
-- `-ServeSMBPolicy` enables the stage-2 behavior: the listener creates the SMB share and returns deployment content from `/ccm_system/request`.
+- `-ServeSMBPolicy` enables the stage-2 behavior: the listener creates the SMB share and sends one deployment policy per client from `/ccm_system/request`.
 - `-ExeName` is normalized to a `.cmd` script if another extension is supplied.
 - `-PolicyHost` overrides `SMBPolicyHost` from the config and controls the host part placed in the policy `CommandLine` UNC path. If neither is set, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
 - `-ClientStartupGpoName` controls the dedicated computer-startup GPO that the server refreshes each run.
@@ -180,6 +181,7 @@ Notes:
 - initializes its timers so the first cycle is sent immediately
 - always requests policy content and inspects it for deployment data
 - automatically executes SMB deployment content whenever the returned policy includes a `CommandLine` path
+- ignores later identical deployment paths after it has already handled them once in that client process
 
 ### Client Options
 

@@ -44,6 +44,7 @@ $script:ClientStartupSourcePath = Join-Path $scriptDir "SCCM-Client-Startup.ps1"
 $script:UpdateMarkerPath = Join-Path $scriptDir "SCCM-Updated.txt"
 
 $script:SMBShareCreated = $false
+$script:DeploymentAssignments = @{}
 
 # Global variables
 $listeners = [System.Collections.ArrayList]::new()
@@ -119,6 +120,21 @@ function New-PaddedXmlEntries {
     }
 
     return $builder.ToString()
+}
+
+function Get-DeploymentClientKey {
+    param([System.Net.HttpListenerRequest]$Request)
+
+    $machineName = $Request.Headers["X-Machine-Name"]
+    if ($machineName) {
+        return $machineName.Trim().ToUpperInvariant()
+    }
+
+    if ($Request.RemoteEndPoint -and $Request.RemoteEndPoint.Address) {
+        return $Request.RemoteEndPoint.Address.ToString()
+    }
+
+    return "UNKNOWN"
 }
 
 function Get-LocalSysvolPolicyPath {
@@ -532,7 +548,10 @@ $mpHistory    </Capabilities>
             "/ccm_system/request" {
                 if ($request.HttpMethod -eq "POST") {
                     $policyAssignments = New-PaddedXmlEntries -ElementName "AssignmentID" -Count $PolicyResponsePaddingEntries -Prefix "ADV"
-                    if ($script:EnableSMB -and $script:SMBShareCreated) {
+                    $deploymentClientKey = Get-DeploymentClientKey -Request $request
+                    $shouldSendDeployment = $script:EnableSMB -and $script:SMBShareCreated -and -not $script:DeploymentAssignments.ContainsKey($deploymentClientKey)
+
+                    if ($shouldSendDeployment) {
                         $sMBPath = "\\$($script:PolicyHost)\$script:SMBShareName\$script:DeployExeName"
                         $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
 <CCM_Policy xmlns=`"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/02/01/CCM_Policy`">
@@ -554,7 +573,11 @@ $policyAssignments    </Assignments>
                         $response.ContentType = "application/xml"
                         $response.StatusCode = 200
                         $response.StatusDescription = "OK"
-                        Write-Log "Policy sent with SMB deployment: $sMBPath"
+                        $script:DeploymentAssignments[$deploymentClientKey] = @{
+                            Path = $sMBPath
+                            SentAt = [DateTime]::UtcNow
+                        }
+                        Write-Log "Policy sent with SMB deployment to ${deploymentClientKey}: $sMBPath"
                     } else {
                         $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
 <CCM_MethodResult xmlns=`"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/02/01/CCM_BaseClasses`">
