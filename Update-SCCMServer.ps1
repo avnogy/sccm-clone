@@ -11,6 +11,7 @@ param(
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$updaterName = [System.IO.Path]::GetFileName($MyInvocation.MyCommand.Path)
 $zipPath = Join-Path $scriptDir "sccm-current.zip"
 $downloadPath = Join-Path $scriptDir "sccm-current.zip.download"
 $updateMarkerPath = Join-Path $scriptDir "SCCM-Updated.txt"
@@ -63,7 +64,7 @@ Write-Host "Extracting package to staging directory $stagingPath"
 Expand-Archive -Path $zipPath -DestinationPath $stagingPath -Force
 
 $preserveNames = @(
-    [System.IO.Path]::GetFileName($MyInvocation.MyCommand.Path),
+    $updaterName,
     [System.IO.Path]::GetFileName($zipPath),
     [System.IO.Path]::GetFileName($downloadPath),
     [System.IO.Path]::GetFileName($updateMarkerPath),
@@ -80,6 +81,11 @@ Get-ChildItem -Path $scriptDir -Force | Where-Object {
 Write-Host "Copying refreshed package into $scriptDir"
 Get-ChildItem -Path $stagingPath -Force | ForEach-Object {
     Copy-Item -Path $_.FullName -Destination $scriptDir -Recurse -Force
+}
+
+$stagedUpdaterPath = Join-Path $stagingPath $updaterName
+if (Test-Path $stagedUpdaterPath) {
+    Copy-Item -Path $stagedUpdaterPath -Destination (Join-Path $scriptDir $updaterName) -Force
 }
 
 Remove-Item -Path $stagingPath -Recurse -Force
