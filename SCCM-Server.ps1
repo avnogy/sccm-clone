@@ -495,8 +495,6 @@ function Handle-HttpRequest {
             $context.Request.LocalEndPoint.Address, $context.Request.LocalEndPoint.Port, `
             $request.HttpMethod, $request.Url.PathAndQuery
         Write-Log $logMessage
-        Write-Log ("CLIENT_IP={0} PROTOCOL=HTTP METHOD={1} PATH={2}" -f `
-            $remoteEndPoint.Address, $request.HttpMethod, $request.Url.PathAndQuery)
         
         Start-Sleep -Milliseconds $ResponseDelayMs
         
@@ -701,8 +699,6 @@ function Handle-TcpClient {
         Write-Log ("{0}:{1} -> {2}:{3} TCP CONNECT" -f `
             $remoteEndPoint.Address, $remoteEndPoint.Port, `
             $localEndPoint.Address, $localEndPoint.Port)
-        Write-Log ("CLIENT_IP={0} PROTOCOL=TCP PORT={1}" -f `
-            $remoteEndPoint.Address, $localEndPoint.Port)
 
         $stream = $Client.GetStream()
         if ($stream.DataAvailable) {
