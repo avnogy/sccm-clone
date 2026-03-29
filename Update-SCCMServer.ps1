@@ -7,7 +7,7 @@ Downloads the latest SCCM simulator package and extracts it in place.
 
 [CmdletBinding()]
 param(
-    [string]$PackageUrl = "https://github.com/avnogy/sccm-clone/raw/refs/heads/master/sccm-current.zip"
+    [string]$PackageUrl = "https://raw.githubusercontent.com/avnogy/sccm-clone/master/sccm-current.zip"
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -26,6 +26,15 @@ try {
 }
 finally {
     [System.Net.ServicePointManager]::SecurityProtocol = $previousSecurityProtocol
+}
+
+if (-not (Test-Path $zipPath)) {
+    throw "Package download failed: $zipPath was not created"
+}
+
+$zipFile = Get-Item $zipPath
+if ($zipFile.Length -le 0) {
+    throw "Package download failed: $zipPath is empty"
 }
 
 Write-Host "Extracting package to $scriptDir"
