@@ -14,7 +14,19 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $zipPath = Join-Path $scriptDir "sccm-current.zip"
 
 Write-Host "Downloading latest package from $PackageUrl"
-Invoke-WebRequest -Uri $PackageUrl -OutFile $zipPath -ErrorAction Stop
+$previousSecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol
+try {
+    $modernProtocols = [System.Net.SecurityProtocolType]::Tls12
+    if ([enum]::GetNames([System.Net.SecurityProtocolType]) -contains 'Tls13') {
+        $modernProtocols = $modernProtocols -bor [System.Net.SecurityProtocolType]::Tls13
+    }
+
+    [System.Net.ServicePointManager]::SecurityProtocol = $modernProtocols
+    Invoke-WebRequest -Uri $PackageUrl -OutFile $zipPath -ErrorAction Stop
+}
+finally {
+    [System.Net.ServicePointManager]::SecurityProtocol = $previousSecurityProtocol
+}
 
 Write-Host "Extracting package to $scriptDir"
 Expand-Archive -Path $zipPath -DestinationPath $scriptDir -Force
