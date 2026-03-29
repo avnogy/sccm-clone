@@ -29,7 +29,7 @@ function Write-Log {
     if ($script:LogEnabled) {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         $threadId = [System.Threading.Thread]::CurrentThread.ManagedThreadId
-        Write-Host "[$timestamp] [$level] TID:$threadId - $message"
+        Write-Host "[$timestamp] [$level] TID:${threadId} - $message"
     }
 }
 
@@ -70,7 +70,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
 # DC Discovery Functions
 function Find-DC {
     Write-Log "Discovering Domain Controller..."
-    
+
     # Method 1: nltest /dsgetdc (most reliable)
     try {
         Write-VerboseLog "Trying nltest /dsgetdc..."
@@ -85,7 +85,7 @@ function Find-DC {
     } catch {
         Write-VerboseLog "nltest failed: $_"
     }
-    
+
     # Method 2: DNS SRV record for SCCM
     try {
         Write-VerboseLog "Trying DNS SRV query for _sccm-proxy._tcp..."
@@ -104,7 +104,7 @@ function Find-DC {
     } catch {
         Write-VerboseLog "DNS SRV query failed: $_"
     }
-    
+
     # Method 3: Environment variable (LOGONSERVER)
     try {
         if ($env:LOGONSERVER) {
@@ -115,7 +115,7 @@ function Find-DC {
     } catch {
         Write-VerboseLog "LOGONSERVER check failed: $_"
     }
-    
+
     # Method 4: Current domain via ADSI (fallback)
     try {
         Write-VerboseLog "Trying ADSI domain lookup..."
@@ -128,7 +128,7 @@ function Find-DC {
     } catch {
         Write-VerboseLog "ADSI lookup failed: $_"
     }
-    
+
     Write-Log "ERROR: Could not discover Domain Controller using any method" "ERROR"
     return $null
 }
@@ -141,29 +141,29 @@ function Invoke-SCCMRequest {
         [string]$Body = $null,
         [hashtable]$Headers = @{}
     )
-    
+
     for ($attempt = 0; $attempt -lt $MaxRetries; $attempt++) {
         try {
             Write-VerboseLog "Attempt $($attempt + 1) of ${MaxRetries}: $Method ${Url}"
-            
+
             $defaultHeaders = @{
                 "User-Agent" = "SMS CCM/5.00"
                 "Accept" = "*/*"
                 "X-Machine-Name" = $env:COMPUTERNAME
                 "X-Client-Version" = "5.00"
             }
-            
+
             $allHeaders = $defaultHeaders.Clone()
             foreach ($key in $Headers.Keys) {
                 $allHeaders[$key] = $Headers[$key]
             }
-            
+
             if ($Body -and -not $allHeaders.ContainsKey("Content-Type")) {
                 $allHeaders["Content-Type"] = "application/xml; charset=utf-8"
             }
-            
+
             $response = Invoke-WebRequest -Uri $Url -Method $Method -Body $Body -Headers $allHeaders -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
-            
+
             Write-VerboseLog "Request successful: $($response.StatusCode)"
             return @{
                 StatusCode = $response.StatusCode
@@ -190,7 +190,7 @@ function Invoke-SCCMRequest {
 # Get client IP address
 function Get-ClientIP {
     try {
-        $ip = Get-NetIPAddress -AddressFamily IPv4 | 
+        $ip = Get-NetIPAddress -AddressFamily IPv4 |
             Where-Object { $_.IPAddress -notlike "169.254.*" -and $_.IPAddress -notlike "127.*" -and $_.PrefixOrigin -ne "WellKnown" } |
             Select-Object -First 1 -ExpandProperty IPAddress
         if ($ip) { return $ip }
@@ -201,11 +201,11 @@ function Get-ClientIP {
 # SCCM Traffic Functions
 function Send-LocationRequest {
     param([string]$DC)
-    
+
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
     $url = "${protocol}://${DC}:${port}/sms_ls.srf"
-    
+
     $clientIP = Get-ClientIP
     $body = @"
 <LocationRequest>
@@ -219,7 +219,7 @@ function Send-LocationRequest {
     </Request>
 </LocationRequest>
 "@
-    
+
     $result = Invoke-SCCMRequest -Method "POST" -Url $url -Body $body
     if ($result.StatusCode -eq 200) {
         Write-Log "Location request sent to $url - Response: $($result.StatusCode)"
@@ -232,11 +232,11 @@ function Send-LocationRequest {
 
 function Send-PolicyRequest {
     param([string]$DC, [switch]$ReturnContent)
-    
+
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
     $url = "${protocol}://${DC}:${port}/ccm_system/request"
-    
+
     $body = @"
 <CCM_MethodInvocation xmlns="http://schemas.microsoft.com/SystemCenterConfigurationManager/2009">
     <MethodName>GetPolicy</MethodName>
@@ -248,7 +248,7 @@ function Send-PolicyRequest {
     </Parameters>
 </CCM_MethodInvocation
 "@
-    
+
     $result = Invoke-SCCMRequest -Method "POST" -Url $url -Body $body
     if ($result.StatusCode -eq 200) {
         Write-Log "Policy request sent to $url - Response: $($result.StatusCode)"
@@ -264,28 +264,28 @@ function Send-PolicyRequest {
 
 function Send-NotificationPoll {
     param([string]$DC)
-    
+
     try {
         Write-VerboseLog "Attempting TCP connection to ${DC}:${NotifyPort} for notification poll"
         $tcpClient = New-Object System.Net.Sockets.TcpClient
         $asyncResult = $tcpClient.BeginConnect($DC, $NotifyPort, $null, $null)
         $waitHandle = $asyncResult.AsyncWaitHandle
-        
+
         try {
             if (-not $asyncResult.AsyncWaitHandle.WaitOne([TimeSpan]::FromSeconds(5), $false)) {
                 $tcpClient.Close()
                 Throw "Connection timeout"
             }
-            
+
             $tcpClient.EndConnect($asyncResult) | Out-Null
-            
+
             $networkStream = $tcpClient.GetStream()
             if ($networkStream.CanWrite) {
                 $pollByte = [byte]0x01
                 $networkStream.Write($pollByte, 0, 1)
                 $networkStream.Flush()
             }
-            
+
             $tcpClient.Close()
             Write-Log "Notification poll sent to TCP ${DC}:${NotifyPort} - Connection successful"
             return $true
@@ -301,11 +301,11 @@ function Send-NotificationPoll {
 
 function Send-UpdateScan {
     param([string]$DC)
-    
+
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $SUPSHTTPSPort } else { $SUPHTTPPort }
     $url = "${protocol}://${DC}:${port}/SimpleAuthwebservice/SimpleAuth.asmx"
-    
+
     $body = @"
 <?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
@@ -314,11 +314,11 @@ function Send-UpdateScan {
     </soap:Body>
 </soap:Envelope>
 "@
-    
+
     $headers = @{
         "SOAPAction" = "http://www.microsoft.com/SoftwareDistribution/Server/ClientWebService/GetUpdateLocations"
     }
-    
+
     $result = Invoke-SCCMRequest -Method "POST" -Url $url -Body $body -Headers $headers
     if ($result.StatusCode -eq 200) {
         Write-Log "Update scan sent to $url - Response: $($result.StatusCode)"
@@ -331,11 +331,11 @@ function Send-UpdateScan {
 
 function Send-Heartbeat {
     param([string]$DC)
-    
+
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
     $url = "${protocol}://${DC}:${port}/sms_mp"
-    
+
     $clientIP = Get-ClientIP
     $timestamp = (Get-Date).ToUniversalTime().ToString("o")
     $body = @"
@@ -357,7 +357,7 @@ function Send-Heartbeat {
     </Body>
 </CCM_Message
 "@
-    
+
     $result = Invoke-SCCMRequest -Method "POST" -Url $url -Body $body
     if ($result.StatusCode -eq 200) {
         Write-Log "Heartbeat sent to $url - Response: $($result.StatusCode)"
@@ -370,32 +370,32 @@ function Send-Heartbeat {
 
 function Invoke-SMBDeployment {
     param([string]$Content)
-    
+
     if (-not $Content) {
         return $false
     }
-    
+
     try {
         if ($Content -match '<CommandLine>([^<]+)</CommandLine>') {
             $sMBPath = $matches[1].Trim()
             Write-Log "Policy received - SMB deployment: $sMBPath"
-            
+
             if ($sMBPath -match '\\\\([^\\]+)\\([^\\]+)\\(.+)') {
                 $server = $matches[1]
                 $share = $matches[2]
                 $fileName = $matches[3]
-                
+
                 Write-Log "Downloading from \\$server\$share..."
-                
+
                 $localPath = Join-Path $env:TEMP $fileName
-                
+
                 try {
                     Copy-Item -Path $sMBPath -Destination $localPath -Force -ErrorAction Stop
                     Write-Log "Downloaded to: $localPath"
-                    
+
                     Write-Log "Executing: $localPath"
                     $process = Start-Process -FilePath $localPath -NoNewWindow -PassThru -ErrorAction Stop
-                    
+
                     Write-Log "Deployment executed successfully (PID: $($process.Id))"
                     return $true
                 } catch {
@@ -411,7 +411,7 @@ function Invoke-SMBDeployment {
         Write-ErrorLog "Deployment parse failed: $($_.Exception.Message)"
         return $false
     }
-    
+
     return $false
 }
 
@@ -421,27 +421,27 @@ try {
     Write-Log "OneShot mode: $OneShot"
     Write-Log "Using HTTPS: $UseHTTPS"
     Write-Log "AutoDeploy mode: $AutoDeploy"
-    
+
     # Discover DC
     $DC = Find-DC
     if (-not $DC) {
         Write-Log "FATAL: Could not discover Domain Controller. Exiting." "ERROR"
         exit 1
     }
-    
+
     Write-Log "Using DC: $DC"
-    
+
     # Initialize timers
     $timers = @{}
     foreach ($key in $Intervals.Keys) {
         $timers[$key] = [DateTime]::UtcNow
     }
-    
+
     # Main loop
     do {
         $now = [DateTime]::UtcNow
         $anyActivity = $false
-        
+
         # Location Request
         if (($now - $timers.LocationRequest).TotalSeconds -ge $Intervals.LocationRequest) {
             if (Send-LocationRequest -DC $DC) {
@@ -449,7 +449,7 @@ try {
                 $anyActivity = $true
             }
         }
-        
+
         # Notification Poll
         if (($now - $timers.Notification).TotalSeconds -ge $Intervals.Notification) {
             if (Send-NotificationPoll -DC $DC) {
@@ -457,7 +457,7 @@ try {
                 $anyActivity = $true
             }
         }
-        
+
         # Policy Request
         if (($now - $timers.PolicyRequest).TotalSeconds -ge $Intervals.PolicyRequest) {
             $policyContent = $null
@@ -466,17 +466,17 @@ try {
             } else {
                 $policyResult = Send-PolicyRequest -DC $DC
             }
-            
+
             if ($policyContent -or $policyResult) {
                 $timers.PolicyRequest = $now
                 $anyActivity = $true
             }
-            
+
             if ($AutoDeploy -and $policyContent) {
                 Invoke-SMBDeployment -Content $policyContent
             }
         }
-        
+
         # Update Scan
         if (($now - $timers.UpdateScan).TotalSeconds -ge $Intervals.UpdateScan) {
             if (Send-UpdateScan -DC $DC) {
@@ -484,7 +484,7 @@ try {
                 $anyActivity = $true
             }
         }
-        
+
         # Heartbeat
         if (($now - $timers.Heartbeat).TotalSeconds -ge $Intervals.Heartbeat) {
             if (Send-Heartbeat -DC $DC) {
@@ -492,15 +492,15 @@ try {
                 $anyActivity = $true
             }
         }
-        
+
         if (-not $anyActivity) {
             Start-Sleep -Milliseconds 500
         }
-        
+
     } while (-not $OneShot)
-    
+
     Write-Log "Simulation completed."
-    
+
 } catch {
     Write-Log "FATAL ERROR: $_" "ERROR"
     exit 1

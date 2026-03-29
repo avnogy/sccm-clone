@@ -385,7 +385,7 @@ function Start-HttpListener {
     param([int]$Port, [bool]$UseHttps = $false, [int]$HttpPort, [int]$HttpsPort, [int]$SupHttpPort, [int]$SupHttpsPort)
     
     try {
-        $prefix = if ($UseHttps) { "https://+:$Port/" } else { "http://+:$Port/" }
+        $prefix = if ($UseHttps) { "https://+:${Port}/" } else { "http://+:${Port}/" }
         
         $listener = New-Object System.Net.HttpListener
         $listener.Prefixes.Add($prefix)
