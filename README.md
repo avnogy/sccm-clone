@@ -1,13 +1,13 @@
 # SCCM Network Traffic Simulator
 
-This repo contains a small PowerShell-based lab setup for generating SCCM-like client/server traffic for packet capture and testing.
+This repo is a PowerShell-based lab setup for generating SCCM-like traffic for packet capture and testing.
 
-It has two main roles:
+It has two roles:
 
 - `SCCM-Listener.ps1`: mock Management Point / Software Update Point / notification listener
-- `SCCM-ClientSimulator.ps1`: mock SCCM client that discovers a host and generates recurring traffic
+- `SCCM-ClientSimulator.ps1`: mock SCCM client that continuously generates recurring traffic
 
-`SCCM-Config.ps1` contains the shared ports, intervals, retry settings, and SMB deployment defaults used by both scripts.
+`SCCM-Config.ps1` contains the shared ports, intervals, retry settings, and deployment defaults used by both scripts.
 
 ## What It Simulates
 
@@ -26,7 +26,7 @@ The client simulator generates:
 - notification polls on TCP `10123`
 - update scan requests to `/SimpleAuthwebservice/SimpleAuth.asmx`
 - heartbeats to `/sms_mp`
-- optional SMB download and execution when `-AutoDeploy` is used
+- automatic SMB download and execution whenever the returned policy contains deployment content
 
 ## Requirements
 
@@ -36,7 +36,7 @@ The client simulator generates:
   - `HttpListener` on privileged ports
   - `New-SmbShare` / `Get-SmbShare`
   - certificate creation and `netsh http add sslcert`
-- For domain-controller discovery in the client:
+- For client target discovery:
   - at least one of `nltest`, `LOGONSERVER`, `USERDNSDOMAIN`, or current-domain ADSI lookup must work
 
 The listener does not have to run on an actual Domain Controller. It can run on any reachable Windows host that satisfies the requirements above.
@@ -47,51 +47,9 @@ The listener does not have to run on an actual Domain Controller. It can run on 
 - `SCCM-Listener.ps1`: mock SCCM server-side listener
 - `SCCM-ClientSimulator.ps1`: mock SCCM client
 
-## Quick Start
-
-### Mode 1: Traffic Only
-
-Run the listener without SMB deployment:
-
-```powershell
-# On the listener host, as Administrator
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-Listener.ps1 -NoSMB
-
-# On the client host
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-ClientSimulator.ps1
-```
-
-### Mode 2: Traffic Plus SMB Deployment
-
-Run the listener with the default SMB share and deployment script:
-
-```powershell
-# On the listener host, as Administrator
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-Listener.ps1
-
-# On the client host
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-ClientSimulator.ps1 -AutoDeploy
-```
-
-### Mode 3: One-Shot
-
-Send one immediate cycle and exit:
-
-```powershell
-# On the listener host, as Administrator
-.\SCCM-Listener.ps1
-
-# On the client host
-.\SCCM-ClientSimulator.ps1 -OneShot -AutoDeploy
-```
-
 ## Recording the Two Stages
 
-Your two intended capture stages map cleanly to the scripts:
+Your two intended capture stages map directly to the server mode you start.
 
 ### Stage 1: Normal Day-to-Day SCCM Traffic
 
@@ -103,25 +61,25 @@ Goal:
 - update scans
 - heartbeats
 
-How to record it:
+Run it like this:
 
 ```powershell
 # On the listener host, as Administrator
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-Listener.ps1 -NoSMB
+.\SCCM-Listener.ps1
 
-# On the client host
+# On each client
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\SCCM-ClientSimulator.ps1
 ```
 
-What this does:
+What happens:
 
 - the listener returns normal mock SCCM responses
-- the policy endpoint returns a basic success response with no SMB deployment payload
-- the client keeps generating recurring SCCM-like traffic only
+- the policy endpoint returns a basic success response with no deployment `CommandLine`
+- clients keep generating recurring SCCM-like traffic only
 
-### Stage 2: Policy Delivery Followed by File Fetch and Execution
+### Stage 2: Policy Delivery Followed by SMB Fetch and Execution
 
 Goal:
 
@@ -130,34 +88,26 @@ Goal:
 - client SMB access to that file
 - client execution of the downloaded payload
 
-How to record it:
+Run it like this:
 
 ```powershell
 # On the listener host, as Administrator
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-Listener.ps1
+.\SCCM-Listener.ps1 -ServeSMBPolicy
 
-# Or, if you want the policy to advertise a specific IP instead of the auto-detected one:
-# .\SCCM-Listener.ps1 -PolicyHost "192.168.1.10"
+# Or, if you want the policy to advertise a specific IP:
+# .\SCCM-Listener.ps1 -ServeSMBPolicy -PolicyHost "192.168.1.10"
 
-# On the client host
+# On each client
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-ClientSimulator.ps1 -AutoDeploy
+.\SCCM-ClientSimulator.ps1
 ```
 
-What this does:
+What happens:
 
-- the listener creates an SMB share and publishes a deployment script
+- the listener creates the SMB share and deployment script
 - the policy response includes a `CommandLine` UNC path of the form `\\IP\Share\file`
-- the client pulls that policy, copies the file over SMB, and executes it
-
-If you want a short, controlled capture for stage 2, use:
-
-```powershell
-.\SCCM-ClientSimulator.ps1 -OneShot -AutoDeploy
-```
-
-That sends one immediate cycle, including the policy pull and the SMB download/execute step.
+- every client requests policy, recognizes the deployment path in the response, copies the file over SMB, and executes it
 
 ## Listener Behavior
 
@@ -166,22 +116,25 @@ That sends one immediate cycle, including the policy pull and the SMB download/e
 - creates or reuses a self-signed certificate for HTTPS listeners
 - binds certificates to ports `443` and `8531`
 - starts listeners on the configured HTTP, HTTPS, SUP, and notification ports
-- optionally creates an SMB share and publishes a deployment script
+- serves normal SCCM-like policy responses by default
+- creates an SMB share and returns deployment policy content only when `-ServeSMBPolicy` is used
 - logs inbound requests and returns mock SCCM-style responses
 - cleans up listeners, certificate bindings, and the SMB share on exit
 
 ### Listener Options
 
 ```powershell
-.\SCCM-Listener.ps1 -NoSMB
+.\SCCM-Listener.ps1
+.\SCCM-Listener.ps1 -ServeSMBPolicy
 .\SCCM-Listener.ps1 -ShareName "CustomShare"
 .\SCCM-Listener.ps1 -SMBSharePath "C:\Temp\SCCMDeploy"
 .\SCCM-Listener.ps1 -ExeName "update.cmd"
-.\SCCM-Listener.ps1 -PolicyHost "192.168.1.10"
+.\SCCM-Listener.ps1 -ServeSMBPolicy -PolicyHost "192.168.1.10"
 ```
 
 Notes:
 
+- `-ServeSMBPolicy` enables the stage-2 behavior: the listener creates the SMB share and returns deployment content from `/ccm_system/request`.
 - `-ExeName` is normalized to a `.cmd` script if another extension is supplied.
 - `-PolicyHost` controls the host part placed in the policy `CommandLine` UNC path. If you do not set it, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
 - The generated deployment file is a simple command script that appends to `C:\sccm_deployed.log`.
@@ -194,24 +147,23 @@ Notes:
 - uses HTTPS by default
 - accepts self-signed certificates when HTTPS is enabled
 - retries HTTP requests according to the shared config
-- runs continuously until stopped, unless `-OneShot` is used
+- runs continuously until stopped
 - initializes its timers so the first cycle is sent immediately
+- always requests policy content and inspects it for deployment data
+- automatically executes SMB deployment content whenever the returned policy includes a `CommandLine` path
 
 ### Client Options
 
 ```powershell
 .\SCCM-ClientSimulator.ps1
-.\SCCM-ClientSimulator.ps1 -OneShot
 .\SCCM-ClientSimulator.ps1 -UseHTTPS:$false
-.\SCCM-ClientSimulator.ps1 -AutoDeploy
 .\SCCM-ClientSimulator.ps1 -Verbose
 ```
 
 Notes:
 
-- `-OneShot` sends one immediate cycle of all request types, then exits.
-- `-AutoDeploy` requests policy content, copies the referenced SMB payload locally, and executes it.
-- `.cmd` and `.bat` payloads are executed via `cmd.exe`.
+- there is no client-side deployment flag; deployment behavior is controlled entirely by the server response
+- `.cmd` and `.bat` payloads are executed via `cmd.exe`
 
 ## Default Configuration
 
@@ -231,6 +183,10 @@ Current defaults from `SCCM-Config.ps1`:
 - deployment file name: `sccm_update.cmd`
 - request retries: `3`
 - retry delay: `5` seconds
+
+## Multi-Client Use
+
+One listener can serve multiple clients at the same time. The listener loop drains multiple queued HTTP requests and notification connections per pass, so running several client machines against one server is supported by design for this lab use case.
 
 ## Limitations
 

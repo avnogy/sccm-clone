@@ -19,7 +19,7 @@ param(
     [string]$ShareName = "",
     [string]$ExeName = "",
     [string]$PolicyHost = "",
-    [switch]$NoSMB
+    [switch]$ServeSMBPolicy
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -32,7 +32,7 @@ if ([System.IO.Path]::GetExtension($DeployExeName) -notin @(".cmd", ".bat")) {
 }
 $script:SMBShareName = $SMBShareName
 $script:DeployExeName = $DeployExeName
-$script:EnableSMB = -not $NoSMB
+$script:EnableSMB = $ServeSMBPolicy
 $script:PolicyHost = $null
 
 $script:SMBShareCreated = $false

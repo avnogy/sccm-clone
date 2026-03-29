@@ -6,15 +6,12 @@ This script discovers the Domain Controller and generates SCCM-like traffic patt
 including location requests, policy requests, notification polls, update scans, and heartbeats.
 .USAGE
     .\SCCM-ClientSimulator.ps1
-    .\SCCM-ClientSimulator.ps1 -OneShot
     .\SCCM-ClientSimulator.ps1 -Verbose
 #>
 
 [CmdletBinding()]
 param(
-    [switch]$OneShot,
-    [switch]$UseHTTPS,
-    [switch]$AutoDeploy
+    [switch]$UseHTTPS
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -220,7 +217,7 @@ function Send-LocationRequest {
 }
 
 function Send-PolicyRequest {
-    param([string]$DC, [switch]$ReturnContent)
+    param([string]$DC)
 
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
@@ -241,13 +238,10 @@ function Send-PolicyRequest {
     $result = Invoke-SCCMRequest -Method "POST" -Url $url -Body $body
     if ($result.StatusCode -eq 200) {
         Write-Log "Policy request sent to $url - Response: $($result.StatusCode)"
-        if ($ReturnContent -and $result.Content) {
-            return $result.Content
-        }
-        return $true
+        return $result.Content
     } else {
         Write-ErrorLog "Policy request failed to ${url}: $($result.StatusDescription)"
-        return $false
+        return $null
     }
 }
 
@@ -412,9 +406,7 @@ function Invoke-SMBDeployment {
 # Main execution
 try {
     Write-Log "Starting SCCM Client Simulator..."
-    Write-Log "OneShot mode: $OneShot"
     Write-Log "Using HTTPS: $UseHTTPS"
-    Write-Log "AutoDeploy mode: $AutoDeploy"
 
     # Discover DC
     $DC = Find-DC
@@ -432,7 +424,7 @@ try {
     }
 
     # Main loop
-    do {
+    while ($true) {
         $now = [DateTime]::UtcNow
         $anyActivity = $false
 
@@ -454,19 +446,14 @@ try {
 
         # Policy Request
         if (($now - $timers.PolicyRequest).TotalSeconds -ge $Intervals.PolicyRequest) {
-            $policyContent = $null
-            if ($AutoDeploy) {
-                $policyContent = Send-PolicyRequest -DC $DC -ReturnContent
-            } else {
-                $policyResult = Send-PolicyRequest -DC $DC
-            }
+            $policyContent = Send-PolicyRequest -DC $DC
 
-            if ($policyContent -or $policyResult) {
+            if ($null -ne $policyContent) {
                 $timers.PolicyRequest = $now
                 $anyActivity = $true
             }
 
-            if ($AutoDeploy -and $policyContent) {
+            if ($policyContent) {
                 Invoke-SMBDeployment -Content $policyContent
             }
         }
@@ -490,10 +477,7 @@ try {
         if (-not $anyActivity) {
             Start-Sleep -Milliseconds 500
         }
-
-    } while (-not $OneShot)
-
-    Write-Log "Simulation completed."
+    }
 
 } catch {
     Write-Log "FATAL ERROR: $_" "ERROR"
