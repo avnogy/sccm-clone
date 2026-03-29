@@ -40,7 +40,7 @@ $script:EnableSMB = $ServeSMBPolicy
 $script:PolicyHost = $null
 $script:ClientSourcePath = Join-Path $scriptDir "SCCM-Client.ps1"
 $script:ConfigSourcePath = Join-Path $scriptDir "SCCM-Config.ps1"
-$script:UpdateMarkerPath = Join-Path $scriptDir ".sccm-update-marker.txt"
+$script:UpdateMarkerPath = Join-Path $scriptDir "SCCM-Updated.txt"
 
 $script:SMBShareCreated = $false
 
@@ -59,7 +59,7 @@ function Write-Log {
 
 function Write-UpdateMarker {
     if (-not (Test-Path $script:UpdateMarkerPath)) {
-        Write-Log "PACKAGE_UPDATE=none"
+        Write-Log "PACKAGE_UPDATE_STATUS=none"
         return
     }
 
@@ -76,14 +76,12 @@ function Write-UpdateMarker {
             }
         }
 
-        if ($updatedAt) {
-            Write-Log "PACKAGE_UPDATE=$updatedAt"
-        }
-        if ($packageUrl) {
-            Write-Log "PACKAGE_SOURCE=$packageUrl"
-        }
+        Write-Log "UPDATED_PACKAGE_DETECTED"
+        Write-Log "UPDATE_MARKER_FILE=$script:UpdateMarkerPath"
+        if ($updatedAt) { Write-Log "PACKAGE_UPDATE_TIME=$updatedAt" }
+        if ($packageUrl) { Write-Log "PACKAGE_SOURCE=$packageUrl" }
     } catch {
-        Write-Log "PACKAGE_UPDATE=unreadable"
+        Write-Log "PACKAGE_UPDATE_STATUS=unreadable"
     }
 }
 

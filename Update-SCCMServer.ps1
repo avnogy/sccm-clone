@@ -12,7 +12,7 @@ param(
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $zipPath = Join-Path $scriptDir "sccm-current.zip"
-$updateMarkerPath = Join-Path $scriptDir ".sccm-update-marker.txt"
+$updateMarkerPath = Join-Path $scriptDir "SCCM-Updated.txt"
 
 Write-Host "Downloading latest package from $PackageUrl"
 $previousSecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol
