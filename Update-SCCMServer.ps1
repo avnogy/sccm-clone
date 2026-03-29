@@ -12,6 +12,7 @@ param(
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $zipPath = Join-Path $scriptDir "sccm-current.zip"
+$downloadPath = Join-Path $scriptDir "sccm-current.zip.download"
 $updateMarkerPath = Join-Path $scriptDir "SCCM-Updated.txt"
 
 Write-Host "Downloading latest package from $PackageUrl"
@@ -23,19 +24,34 @@ try {
     }
 
     [System.Net.ServicePointManager]::SecurityProtocol = $modernProtocols
-    Invoke-WebRequest -Uri $PackageUrl -OutFile $zipPath -ErrorAction Stop
+    if (Test-Path $downloadPath) {
+        Remove-Item -Path $downloadPath -Force
+    }
+
+    Invoke-WebRequest -Uri $PackageUrl -OutFile $downloadPath -ErrorAction Stop
 }
 finally {
     [System.Net.ServicePointManager]::SecurityProtocol = $previousSecurityProtocol
 }
 
-if (-not (Test-Path $zipPath)) {
-    throw "Package download failed: $zipPath was not created"
+if (-not (Test-Path $downloadPath)) {
+    throw "Package download failed: $downloadPath was not created"
 }
 
-$zipFile = Get-Item $zipPath
+$zipFile = Get-Item $downloadPath
 if ($zipFile.Length -le 0) {
-    throw "Package download failed: $zipPath is empty"
+    throw "Package download failed: $downloadPath is empty"
+}
+
+$zipHeader = [System.IO.File]::ReadAllBytes($downloadPath)[0..1]
+if ($zipHeader[0] -ne 0x50 -or $zipHeader[1] -ne 0x4B) {
+    throw "Package download failed: $downloadPath is not a zip archive"
+}
+
+Move-Item -Path $downloadPath -Destination $zipPath -Force
+
+if (-not (Test-Path $zipPath)) {
+    throw "Package staging failed: $zipPath was not created"
 }
 
 Write-Host "Extracting package to $scriptDir"
