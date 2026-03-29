@@ -10,6 +10,7 @@ files=(
   "SCCM-Client.ps1"
   "SCCM-Config.ps1"
   "SCCM-Server.ps1"
+  "Update-SCCMServer.ps1"
 )
 
 if command -v zip >/dev/null 2>&1; then
@@ -26,6 +27,7 @@ files = [
     "SCCM-Client.ps1",
     "SCCM-Config.ps1",
     "SCCM-Server.ps1",
+    "Update-SCCMServer.ps1",
 ]
 
 with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
