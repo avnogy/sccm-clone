@@ -30,7 +30,7 @@ $Intervals = @{
 $DefaultSMBSharePath = "C:\SCCMDeploy"
 $SMBShareName = "SCCMDeploy"
 $SMBPolicyHost = "192.168.20.9"
-$DeployExeName = "sccm_update.cmd"
+$DeployExeName = "sccm_update.exe"
 $DeploymentFileSizeKB = 64
 
 # Response Body Sizing
