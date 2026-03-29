@@ -144,7 +144,7 @@ function Invoke-SCCMRequest {
     
     for ($attempt = 0; $attempt -lt $MaxRetries; $attempt++) {
         try {
-            Write-VerboseLog "Attempt $($attempt + 1) of $MaxRetries: $Method $Url"
+            Write-VerboseLog "Attempt $($attempt + 1) of $MaxRetries: $Method ${Url}"
             
             $defaultHeaders = @{
                 "User-Agent" = "SMS CCM/5.00"
