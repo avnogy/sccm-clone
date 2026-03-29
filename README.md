@@ -43,6 +43,8 @@ If discovery is not convenient in your lab, clients can be pointed directly at t
 
 The listener does not have to run on an actual Domain Controller. It can run on any reachable Windows host that satisfies the requirements above.
 
+If you want the server to automatically roll out the current client script to domain computers, run it on a domain controller or a host that has the Active Directory and Group Policy PowerShell modules plus write access to SYSVOL.
+
 ## Files
 
 - `SCCM-Config.ps1`: shared configuration
@@ -80,6 +82,7 @@ What happens:
 - the listener returns normal mock SCCM responses
 - the policy endpoint returns a basic success response with no deployment `CommandLine`
 - clients keep generating recurring SCCM-like traffic only
+- the server refreshes a dedicated computer-startup GPO so domain machines pick up the latest `SCCM-Client.ps1` and `SCCM-Config.ps1`
 
 ### Stage 2: Policy Delivery Followed by SMB Fetch and Execution
 
@@ -111,6 +114,7 @@ What happens:
 - the policy response includes a `CommandLine` UNC path of the form `\\IP\Share\file`
 - every client requests policy, recognizes the deployment path in the response, copies the file over SMB, and executes it
 - each client executes a given deployment path once per client process lifetime, which prevents the same payload from re-running every policy interval
+- the server refreshes the domain startup deployment so rebooted domain computers pick up the latest client version automatically
 
 ## Listener Behavior
 
@@ -121,6 +125,7 @@ What happens:
 - starts listeners on the configured HTTP, HTTPS, SUP, and notification ports
 - serves normal SCCM-like policy responses by default
 - creates an SMB share and returns deployment policy content only when `-ServeSMBPolicy` is used
+- refreshes a dedicated domain computer-startup GPO on each run so the latest client script is published into SYSVOL
 - logs inbound requests and returns mock SCCM-style responses
 - cleans up listeners, certificate bindings, and the SMB share on exit
 
@@ -133,6 +138,8 @@ What happens:
 .\SCCM-Server.ps1 -SMBSharePath "C:\Temp\SCCMDeploy"
 .\SCCM-Server.ps1 -ExeName "update.cmd"
 .\SCCM-Server.ps1 -ServeSMBPolicy -PolicyHost "192.168.1.10"
+.\SCCM-Server.ps1 -ClientStartupGpoName "SCCM Simulator Client Startup"
+.\SCCM-Server.ps1 -ClientInstallRoot "C:\ProgramData\SCCMSim"
 ```
 
 Notes:
@@ -140,6 +147,8 @@ Notes:
 - `-ServeSMBPolicy` enables the stage-2 behavior: the listener creates the SMB share and returns deployment content from `/ccm_system/request`.
 - `-ExeName` is normalized to a `.cmd` script if another extension is supplied.
 - `-PolicyHost` controls the host part placed in the policy `CommandLine` UNC path. If you do not set it, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
+- `-ClientStartupGpoName` controls the dedicated computer-startup GPO that the server refreshes each run.
+- `-ClientInstallRoot` controls where the startup script copies the client locally on each machine before launching it.
 - The generated deployment file is a simple command script that appends to `C:\sccm_deployed.log`.
 
 ## Client Behavior

@@ -19,6 +19,8 @@ param(
     [string]$ShareName = "",
     [string]$ExeName = "",
     [string]$PolicyHost = "",
+    [string]$ClientStartupGpoName = "SCCM Simulator Client Startup",
+    [string]$ClientInstallRoot = "C:\ProgramData\SCCMSim",
     [switch]$ServeSMBPolicy
 )
 
@@ -34,6 +36,8 @@ $script:SMBShareName = $SMBShareName
 $script:DeployExeName = $DeployExeName
 $script:EnableSMB = $ServeSMBPolicy
 $script:PolicyHost = $null
+$script:ClientSourcePath = Join-Path $scriptDir "SCCM-Client.ps1"
+$script:ConfigSourcePath = Join-Path $scriptDir "SCCM-Config.ps1"
 
 $script:SMBShareCreated = $false
 
@@ -83,6 +87,158 @@ function New-PaddedXmlEntries {
     }
 
     return $builder.ToString()
+}
+
+function Get-LocalSysvolPolicyPath {
+    param([string]$DomainDnsRoot, [Guid]$GpoId)
+
+    $policyFolderName = $GpoId.ToString("B").ToUpperInvariant()
+    return (Join-Path $env:SystemRoot "SYSVOL\sysvol\$DomainDnsRoot\Policies\$policyFolderName")
+}
+
+function Update-GptVersion {
+    param([string]$GptPath)
+
+    if (-not (Test-Path $GptPath)) {
+        Set-Content -Path $GptPath -Value "[General]`r`nVersion=0`r`n" -Encoding ASCII
+    }
+
+    $content = Get-Content -Path $GptPath -Raw
+    $currentVersion = 0
+    if ($content -match '(?m)^Version=(\d+)$') {
+        $currentVersion = [int]$matches[1]
+    }
+
+    $newVersion = $currentVersion + 65536
+    if ($content -match '(?m)^Version=\d+$') {
+        $content = [regex]::Replace($content, '(?m)^Version=\d+$', "Version=$newVersion")
+    } else {
+        $content = $content.TrimEnd("`r", "`n") + "`r`nVersion=$newVersion`r`n"
+    }
+
+    Set-Content -Path $GptPath -Value $content -Encoding ASCII
+}
+
+function Publish-ClientStartupDeployment {
+    if (-not (Test-Path $script:ClientSourcePath) -or -not (Test-Path $script:ConfigSourcePath)) {
+        Write-Log "Client deployment skipped: client or config script missing next to the server script"
+        return
+    }
+
+    $requiredCommands = @("Get-ADDomain", "Get-ADObject", "Set-ADObject", "Get-GPO", "New-GPO", "New-GPLink", "Get-GPInheritance")
+    foreach ($commandName in $requiredCommands) {
+        if (-not (Get-Command $commandName -ErrorAction SilentlyContinue)) {
+            Write-Log "Client deployment skipped: required command '$commandName' is not available"
+            return
+        }
+    }
+
+    try {
+        Import-Module ActiveDirectory -ErrorAction Stop
+        Import-Module GroupPolicy -ErrorAction Stop
+
+        $domain = Get-ADDomain -ErrorAction Stop
+        $gpo = Get-GPO -Name $ClientStartupGpoName -ErrorAction SilentlyContinue
+        if (-not $gpo) {
+            $gpo = New-GPO -Name $ClientStartupGpoName -ErrorAction Stop
+            Write-Log "Created startup GPO: $ClientStartupGpoName"
+        } else {
+            Write-Log "Using existing startup GPO: $ClientStartupGpoName"
+        }
+
+        $inheritance = Get-GPInheritance -Target $domain.DistinguishedName -ErrorAction Stop
+        $isLinked = $false
+        foreach ($link in $inheritance.GpoLinks) {
+            if ($link.DisplayName -eq $ClientStartupGpoName) {
+                $isLinked = $true
+                break
+            }
+        }
+        if (-not $isLinked) {
+            New-GPLink -Name $ClientStartupGpoName -Target $domain.DistinguishedName -LinkEnabled Yes | Out-Null
+            Write-Log "Linked startup GPO to domain root: $($domain.DNSRoot)"
+        }
+
+        $policyPath = Get-LocalSysvolPolicyPath -DomainDnsRoot $domain.DNSRoot -GpoId $gpo.Id
+        $machineScriptsPath = Join-Path $policyPath "Machine\Scripts"
+        $startupPath = Join-Path $machineScriptsPath "Startup"
+        New-Item -ItemType Directory -Path $startupPath -Force | Out-Null
+
+        $startupCmdName = "SCCM-Client-Startup.cmd"
+        $launcherPs1Name = "Install-SCCMClient.ps1"
+        $clientScriptName = "SCCM-Client.ps1"
+        $configScriptName = "SCCM-Config.ps1"
+
+        Copy-Item -Path $script:ClientSourcePath -Destination (Join-Path $startupPath $clientScriptName) -Force
+        Copy-Item -Path $script:ConfigSourcePath -Destination (Join-Path $startupPath $configScriptName) -Force
+
+        $useHttpsLiteral = if ($UseHTTPS) { '$true' } else { '$false' }
+        $launcherContent = @'
+$ErrorActionPreference = "Stop"
+
+$sourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$targetDir = "__CLIENT_INSTALL_ROOT__"
+$serverHost = "__SERVER_HOST__"
+$useHttps = __USE_HTTPS__
+
+New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+Copy-Item -Path (Join-Path $sourceDir "SCCM-Client.ps1") -Destination (Join-Path $targetDir "SCCM-Client.ps1") -Force
+Copy-Item -Path (Join-Path $sourceDir "SCCM-Config.ps1") -Destination (Join-Path $targetDir "SCCM-Config.ps1") -Force
+
+$existingProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {
+        $_.Name -in @("powershell.exe", "pwsh.exe") -and
+        $_.CommandLine -match "SCCM-Client\.ps1"
+    }
+
+foreach ($process in $existingProcesses) {
+    try {
+        Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+    } catch {
+    }
+}
+
+$argumentList = @(
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", (Join-Path $targetDir "SCCM-Client.ps1"),
+    "-ServerHost", $serverHost
+)
+
+if (-not $useHttps) {
+    $argumentList += "-UseHTTPS:`$false"
+}
+
+Start-Process -FilePath "powershell.exe" -ArgumentList $argumentList -WindowStyle Hidden
+'@
+        $launcherContent = $launcherContent.Replace("__CLIENT_INSTALL_ROOT__", $ClientInstallRoot.Replace('"', '""'))
+        $launcherContent = $launcherContent.Replace("__SERVER_HOST__", $script:PolicyHost.Replace('"', '""'))
+        $launcherContent = $launcherContent.Replace("__USE_HTTPS__", $useHttpsLiteral)
+        Set-Content -Path (Join-Path $startupPath $launcherPs1Name) -Value $launcherContent -Encoding UTF8
+
+        $startupCmdContent = @"
+@echo off
+start "" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0$launcherPs1Name"
+"@
+        Set-Content -Path (Join-Path $startupPath $startupCmdName) -Value $startupCmdContent -Encoding ASCII
+
+        $scriptsIniContent = @"
+[Startup]
+0CmdLine=$startupCmdName
+0Parameters=
+"@
+        Set-Content -Path (Join-Path $machineScriptsPath "scripts.ini") -Value $scriptsIniContent -Encoding Unicode
+
+        $gpoDn = "CN={$($gpo.Id.ToString().ToUpperInvariant())},CN=Policies,CN=System,$($domain.DistinguishedName)"
+        $machineScriptExtension = "[{42B5FAAE-6536-11D2-AE5A-0000F87571E3}{40B6664F-4972-11D1-A7CA-0000F87571E3}]"
+        Set-ADObject -Identity $gpoDn -Replace @{gPCMachineExtensionNames = $machineScriptExtension} -ErrorAction Stop
+
+        Update-GptVersion -GptPath (Join-Path $policyPath "GPT.ini")
+
+        Write-Log "Published latest client startup deployment to: $startupPath"
+    } catch {
+        Write-Log "Client deployment update failed: $($_.Exception.Message)"
+    }
 }
 
 function New-SMBShare {
@@ -251,6 +407,8 @@ if (-not $script:PolicyHost) {
 } else {
     Write-Log "Policy host for deployment content: $script:PolicyHost"
 }
+
+Publish-ClientStartupDeployment
 
 # Generate or use existing certificate for HTTPS ports
 try {
