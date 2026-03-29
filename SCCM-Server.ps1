@@ -162,7 +162,7 @@ function Publish-ClientStartupDeployment {
         return
     }
 
-    $requiredCommands = @("Get-ADDomain", "Get-ADObject", "Set-ADObject", "Get-GPO", "New-GPO", "New-GPLink", "Get-GPInheritance")
+    $requiredCommands = @("Get-ADDomain", "Get-ADObject", "Set-ADObject", "Get-GPO", "New-GPO", "New-GPLink", "Get-GPInheritance", "Set-GPRegistryValue")
     foreach ($commandName in $requiredCommands) {
         if (-not (Get-Command $commandName -ErrorAction SilentlyContinue)) {
             Write-Log "Client deployment skipped: required command '$commandName' is not available"
@@ -196,6 +196,19 @@ function Publish-ClientStartupDeployment {
             Write-Log "Linked startup GPO to domain root: $($domain.DNSRoot)"
         }
 
+        # Make computer policy apply in the foreground and wait for networking at boot,
+        # otherwise startup scripts are easy to miss on fast boots.
+        Set-GPRegistryValue -Name $ClientStartupGpoName `
+            -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\CurrentVersion\Winlogon" `
+            -ValueName "SyncForegroundPolicy" `
+            -Type DWord `
+            -Value 1 | Out-Null
+        Set-GPRegistryValue -Name $ClientStartupGpoName `
+            -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" `
+            -ValueName "GpNetworkStartTimeoutPolicyValue" `
+            -Type DWord `
+            -Value 30 | Out-Null
+
         $policyPath = Get-LocalSysvolPolicyPath -DomainDnsRoot $domain.DNSRoot -GpoId $gpo.Id
         $domainScriptsPath = Get-LocalSysvolScriptsPath -DomainDnsRoot $domain.DNSRoot
         $machineScriptsPath = Join-Path $policyPath "Machine\Scripts"
@@ -221,10 +234,13 @@ $sourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $targetDir = "__CLIENT_INSTALL_ROOT__"
 $serverHost = "__SERVER_HOST__"
 $useHttps = __USE_HTTPS__
+$startupLogPath = Join-Path $targetDir "startup-deploy.log"
 
 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+"[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Startup deployment invoked" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
 Copy-Item -Path (Join-Path $sourceDir "SCCM-Client.ps1") -Destination (Join-Path $targetDir "SCCM-Client.ps1") -Force
 Copy-Item -Path (Join-Path $sourceDir "SCCM-Config.ps1") -Destination (Join-Path $targetDir "SCCM-Config.ps1") -Force
+"[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Client files copied from $sourceDir" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
 
 $existingProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object {
@@ -235,6 +251,7 @@ $existingProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
 foreach ($process in $existingProcesses) {
     try {
         Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+        "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Stopped existing client process $($process.ProcessId)" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
     } catch {
     }
 }
@@ -250,7 +267,9 @@ if (-not $useHttps) {
     $argumentList += "-UseHTTPS:`$false"
 }
 
-Start-Process -FilePath "powershell.exe" -ArgumentList $argumentList -WindowStyle Hidden
+$clientPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+Start-Process -FilePath $clientPowerShell -ArgumentList $argumentList -WindowStyle Hidden
+"[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Started SCCM client for server $serverHost" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
 '@
         $launcherContent = $launcherContent.Replace("__CLIENT_INSTALL_ROOT__", $ClientInstallRoot.Replace('"', '""'))
         $launcherContent = $launcherContent.Replace("__SERVER_HOST__", $script:PolicyHost.Replace('"', '""'))
@@ -260,7 +279,8 @@ Start-Process -FilePath "powershell.exe" -ArgumentList $argumentList -WindowStyl
 
         $startupCmdContent = @"
 @echo off
-start "" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0$launcherPs1Name"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0$launcherPs1Name"
+exit /b %errorlevel%
 "@
         Set-Content -Path (Join-Path $startupPath $startupCmdName) -Value $startupCmdContent -Encoding ASCII
         Set-Content -Path (Join-Path $domainScriptsPath $startupCmdName) -Value $startupCmdContent -Encoding ASCII
