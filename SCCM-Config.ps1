@@ -29,6 +29,13 @@ $Intervals = @{
 # SMB Deployment Settings
 $SMBShareName = "SCCMDeploy"
 $DeployExeName = "sccm_update.cmd"
+$DeploymentFileSizeKB = 64
+
+# Response Body Sizing
+$LocationResponsePaddingEntries = 8
+$PolicyResponsePaddingEntries = 20
+$UpdateResponsePaddingEntries = 16
+$HeartbeatResponsePaddingEntries = 8
 
 # Connection Settings
 $MaxRetries = 3

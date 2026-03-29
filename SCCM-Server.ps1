@@ -69,6 +69,22 @@ function Get-ListenerIPv4 {
     return $null
 }
 
+function New-PaddedXmlEntries {
+    param(
+        [string]$ElementName,
+        [int]$Count,
+        [string]$Prefix
+    )
+
+    $builder = New-Object System.Text.StringBuilder
+    for ($index = 1; $index -le $Count; $index++) {
+        $value = "{0}-{1:000}-{2}" -f $Prefix, $index, ([guid]::NewGuid().ToString("N").Substring(0, 12))
+        [void]$builder.AppendLine(("        <{0}>{1}</{0}>" -f $ElementName, $value))
+    }
+
+    return $builder.ToString()
+}
+
 function New-SMBShare {
     param([string]$SharePath, [string]$ShareName)
     
@@ -86,8 +102,15 @@ function New-SMBShare {
 @echo off
 echo SCCM Deployed Executable Ran at %DATE% %TIME% >> C:\sccm_deployed.log
 "@
+    $targetSizeBytes = [Math]::Max(4096, ($DeploymentFileSizeKB * 1KB))
+    $paddingBuilder = New-Object System.Text.StringBuilder
+    while (($dummyExeContent.Length + $paddingBuilder.Length) -lt $targetSizeBytes) {
+        [void]$paddingBuilder.AppendLine(("REM package-chunk-{0:0000}-{1}" -f $paddingBuilder.Length, ([guid]::NewGuid().ToString("N"))))
+    }
+    $dummyExeContent += $paddingBuilder.ToString()
     [System.IO.File]::WriteAllText($deployExePath, $dummyExeContent)
-    Write-Log "Created deployment executable: $deployExePath"
+    $deploySizeKB = [Math]::Round(((Get-Item $deployExePath).Length / 1KB), 1)
+    Write-Log "Created deployment executable: $deployExePath (${deploySizeKB} KB)"
     
     try {
         $existingShare = Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue
@@ -292,6 +315,7 @@ function Handle-HttpRequest {
         switch ($path) {
             "/sms_ls.srf" {
                 if ($request.HttpMethod -eq "POST") {
+                    $mpHistory = New-PaddedXmlEntries -ElementName "History" -Count $LocationResponsePaddingEntries -Prefix "MP"
                     $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
 <LSLocationServices>
     <MPLists>
@@ -302,6 +326,10 @@ function Handle-HttpRequest {
         <SUPList Value=`"http://$($env:COMPUTERNAME):${SupHttpPort}`"/>
         <SUPList Value=`"https://$($env:COMPUTERNAME):${SupHttpsPort}`"/>
     </SUPLists>
+    <Capabilities>
+        <HttpsEnabled>true</HttpsEnabled>
+        <ClientVersion>5.00.9128.1000</ClientVersion>
+$mpHistory    </Capabilities>
 </LSLocationServices>"
                     $response.ContentType = "application/xml"
                     $response.StatusCode = 200
@@ -314,6 +342,7 @@ function Handle-HttpRequest {
             
             "/ccm_system/request" {
                 if ($request.HttpMethod -eq "POST") {
+                    $policyAssignments = New-PaddedXmlEntries -ElementName "AssignmentID" -Count $PolicyResponsePaddingEntries -Prefix "ADV"
                     if ($script:EnableSMB -and $script:SMBShareCreated) {
                         $sMBPath = "\\$($script:PolicyHost)\$script:SMBShareName\$script:DeployExeName"
                         $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
@@ -329,6 +358,8 @@ function Handle-HttpRequest {
         <RequireUserInteraction>false</RequireUserInteraction>
         <RunMode>Elevated</RunMode>
     </SoftwareDeployment>
+    <Assignments>
+$policyAssignments    </Assignments>
     <returnValue>0</returnValue>
 </CCM_Policy>"
                         $response.ContentType = "application/xml"
@@ -338,6 +369,8 @@ function Handle-HttpRequest {
                     } else {
                         $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
 <CCM_MethodResult xmlns=`"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/02/01/CCM_BaseClasses`">
+    <Assignments>
+$policyAssignments    </Assignments>
     <returnValue>0</returnValue>
 </CCM_MethodResult>"
                         $response.ContentType = "application/xml"
@@ -352,12 +385,16 @@ function Handle-HttpRequest {
             
             "/SimpleAuthwebservice/SimpleAuth.asmx" {
                 if ($request.HttpMethod -eq "POST") {
+                    $updateLocations = New-PaddedXmlEntries -ElementName "Location" -Count $UpdateResponsePaddingEntries -Prefix "SUP"
                     $responseString = "<?xml version=`"1.0`" encoding=`"utf-8`"?>
 <soap:Envelope xmlns:soap=`"http://schemas.xmlsoap.org/soap/envelope/`">
     <soap:Body>
         <GetUpdateLocationsResponse xmlns=`"http://www.microsoft.com/SoftwareDistribution/Server/ClientWebService`">
             <GetUpdateLocationsResult>
                 <ErrorCode>0</ErrorCode>
+                <ContentVersion>2025.03.29.1</ContentVersion>
+                <Locations>
+$updateLocations                </Locations>
             </GetUpdateLocationsResult>
         </GetUpdateLocationsResponse>
     </soap:Body>
@@ -373,10 +410,18 @@ function Handle-HttpRequest {
             
             "/sms_mp" {
                 if ($request.HttpMethod -eq "POST") {
+                    $heartbeatDetails = New-PaddedXmlEntries -ElementName "Record" -Count $HeartbeatResponsePaddingEntries -Prefix "DDR"
                     $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
 <CCM_Message xmlns=`"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009`">
     <Header><MessageType>MPControl</MessageType></Header>
-    <Body><MPControlResponse><Status>0</Status></MPControlResponse></Body>
+    <Body>
+        <MPControlResponse>
+            <Status>0</Status>
+            <ServerTime>$([DateTime]::UtcNow.ToString("o"))</ServerTime>
+            <Records>
+$heartbeatDetails            </Records>
+        </MPControlResponse>
+    </Body>
 </CCM_Message>"
                     $response.ContentType = "application/xml"
                     $response.StatusCode = 200

@@ -188,6 +188,11 @@ Current defaults from `SCCM-Config.ps1`:
 - heartbeat interval: `120` seconds
 - deployment share name: `SCCMDeploy`
 - deployment file name: `sccm_update.cmd`
+- generated deployment file size: `64` KB
+- padded location response entries: `8`
+- padded policy response entries: `20`
+- padded update response entries: `16`
+- padded heartbeat response entries: `8`
 - request retries: `3`
 - retry delay: `5` seconds
 
