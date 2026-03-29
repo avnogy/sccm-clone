@@ -18,6 +18,7 @@ param(
     [string]$SMBSharePath = "",
     [string]$ShareName = "",
     [string]$ExeName = "",
+    [string]$PolicyHost = "",
     [switch]$NoSMB
 )
 
@@ -32,6 +33,7 @@ if ([System.IO.Path]::GetExtension($DeployExeName) -notin @(".cmd", ".bat")) {
 $script:SMBShareName = $SMBShareName
 $script:DeployExeName = $DeployExeName
 $script:EnableSMB = -not $NoSMB
+$script:PolicyHost = $null
 
 $script:SMBShareCreated = $false
 
@@ -45,6 +47,25 @@ function Write-Log {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         Write-Host "[$timestamp] $message"
     }
+}
+
+function Get-ListenerIPv4 {
+    try {
+        $ip = Get-NetIPAddress -AddressFamily IPv4 |
+            Where-Object {
+                $_.IPAddress -notlike "169.254.*" -and
+                $_.IPAddress -notlike "127.*" -and
+                $_.PrefixOrigin -ne "WellKnown"
+            } |
+            Select-Object -First 1 -ExpandProperty IPAddress
+        if ($ip) {
+            return $ip
+        }
+    } catch {
+        Write-Log "Failed to determine listener IPv4 address: $($_.Exception.Message)"
+    }
+
+    return $null
 }
 
 function New-SMBShare {
@@ -199,6 +220,14 @@ trap {
 # Main script starts here
 Write-Log "Starting SCCM Listener..."
 
+$script:PolicyHost = if ($PolicyHost) { $PolicyHost } else { Get-ListenerIPv4 }
+if (-not $script:PolicyHost) {
+    $script:PolicyHost = $env:COMPUTERNAME
+    Write-Log "Policy host fallback is computer name: $script:PolicyHost"
+} else {
+    Write-Log "Policy host for deployment content: $script:PolicyHost"
+}
+
 # Generate or use existing certificate for HTTPS ports
 try {
     $existingCert = Get-ChildItem -Path Cert:\LocalMachine\My |
@@ -229,6 +258,7 @@ if ($script:EnableSMB) {
     $createdPath = New-SMBShare -SharePath $SMBSharePath -ShareName $SMBShareName
     if ($createdPath) {
         Write-Log "SMB deployment share ready at: \\$env:COMPUTERNAME\$SMBShareName"
+        Write-Log "Policy deployment path is: \\$script:PolicyHost\$script:SMBShareName\$script:DeployExeName"
     }
 }
 
@@ -284,7 +314,7 @@ function Handle-HttpRequest {
             "/ccm_system/request" {
                 if ($request.HttpMethod -eq "POST") {
                     if ($script:EnableSMB -and $script:SMBShareCreated) {
-                        $sMBPath = "\\$($env:COMPUTERNAME)\$script:SMBShareName\$script:DeployExeName"
+                        $sMBPath = "\\$($script:PolicyHost)\$script:SMBShareName\$script:DeployExeName"
                         $responseString = "<?xml version=`"1.0`" encoding=`"UTF-8`"?>
 <CCM_Policy xmlns=`"http://schemas.microsoft.com/SystemCenterConfigurationManager/2009/02/01/CCM_Policy`">
     <PolicyID>SoftwareDeployment_001</PolicyID>

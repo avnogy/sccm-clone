@@ -89,6 +89,76 @@ Send one immediate cycle and exit:
 .\SCCM-ClientSimulator.ps1 -OneShot -AutoDeploy
 ```
 
+## Recording the Two Stages
+
+Your two intended capture stages map cleanly to the scripts:
+
+### Stage 1: Normal Day-to-Day SCCM Traffic
+
+Goal:
+
+- location requests
+- policy requests without deployment content
+- notification polling
+- update scans
+- heartbeats
+
+How to record it:
+
+```powershell
+# On the listener host, as Administrator
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\SCCM-Listener.ps1 -NoSMB
+
+# On the client host
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\SCCM-ClientSimulator.ps1
+```
+
+What this does:
+
+- the listener returns normal mock SCCM responses
+- the policy endpoint returns a basic success response with no SMB deployment payload
+- the client keeps generating recurring SCCM-like traffic only
+
+### Stage 2: Policy Delivery Followed by File Fetch and Execution
+
+Goal:
+
+- normal SCCM traffic
+- a policy response that contains a UNC path to a file
+- client SMB access to that file
+- client execution of the downloaded payload
+
+How to record it:
+
+```powershell
+# On the listener host, as Administrator
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\SCCM-Listener.ps1
+
+# Or, if you want the policy to advertise a specific IP instead of the auto-detected one:
+# .\SCCM-Listener.ps1 -PolicyHost "192.168.1.10"
+
+# On the client host
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\SCCM-ClientSimulator.ps1 -AutoDeploy
+```
+
+What this does:
+
+- the listener creates an SMB share and publishes a deployment script
+- the policy response includes a `CommandLine` UNC path of the form `\\IP\Share\file`
+- the client pulls that policy, copies the file over SMB, and executes it
+
+If you want a short, controlled capture for stage 2, use:
+
+```powershell
+.\SCCM-ClientSimulator.ps1 -OneShot -AutoDeploy
+```
+
+That sends one immediate cycle, including the policy pull and the SMB download/execute step.
+
 ## Listener Behavior
 
 `SCCM-Listener.ps1`:
@@ -107,11 +177,13 @@ Send one immediate cycle and exit:
 .\SCCM-Listener.ps1 -ShareName "CustomShare"
 .\SCCM-Listener.ps1 -SMBSharePath "C:\Temp\SCCMDeploy"
 .\SCCM-Listener.ps1 -ExeName "update.cmd"
+.\SCCM-Listener.ps1 -PolicyHost "192.168.1.10"
 ```
 
 Notes:
 
 - `-ExeName` is normalized to a `.cmd` script if another extension is supplied.
+- `-PolicyHost` controls the host part placed in the policy `CommandLine` UNC path. If you do not set it, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
 - The generated deployment file is a simple command script that appends to `C:\sccm_deployed.log`.
 
 ## Client Behavior
