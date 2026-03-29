@@ -12,6 +12,7 @@ param(
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $zipPath = Join-Path $scriptDir "sccm-current.zip"
+$updateMarkerPath = Join-Path $scriptDir ".sccm-update-marker.txt"
 
 Write-Host "Downloading latest package from $PackageUrl"
 $previousSecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol
@@ -40,8 +41,16 @@ if ($zipFile.Length -le 0) {
 Write-Host "Extracting package to $scriptDir"
 Expand-Archive -Path $zipPath -DestinationPath $scriptDir -Force
 
+$updateMarker = @"
+UPDATED_AT=$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+PACKAGE_URL=$PackageUrl
+ZIP_PATH=$zipPath
+"@
+Set-Content -Path $updateMarkerPath -Value $updateMarker -Encoding ASCII
+
 if (-not (Test-Path (Join-Path $scriptDir "SCCM-Server.ps1"))) {
     throw "Server script not found after extraction"
 }
 
-Write-Host "Update complete. Start the server manually with .\\SCCM-Server.ps1"
+Write-Host "Update complete. Marker written to $updateMarkerPath"
+Write-Host "Start the server manually with .\\SCCM-Server.ps1"

@@ -40,6 +40,7 @@ $script:EnableSMB = $ServeSMBPolicy
 $script:PolicyHost = $null
 $script:ClientSourcePath = Join-Path $scriptDir "SCCM-Client.ps1"
 $script:ConfigSourcePath = Join-Path $scriptDir "SCCM-Config.ps1"
+$script:UpdateMarkerPath = Join-Path $scriptDir ".sccm-update-marker.txt"
 
 $script:SMBShareCreated = $false
 
@@ -53,6 +54,36 @@ function Write-Log {
     if ($LogToConsole) {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         Write-Host "[$timestamp] $message"
+    }
+}
+
+function Write-UpdateMarker {
+    if (-not (Test-Path $script:UpdateMarkerPath)) {
+        Write-Log "PACKAGE_UPDATE=none"
+        return
+    }
+
+    try {
+        $markerLines = Get-Content -Path $script:UpdateMarkerPath -ErrorAction Stop
+        $updatedAt = $null
+        $packageUrl = $null
+
+        foreach ($line in $markerLines) {
+            if ($line -match '^UPDATED_AT=(.+)$') {
+                $updatedAt = $matches[1]
+            } elseif ($line -match '^PACKAGE_URL=(.+)$') {
+                $packageUrl = $matches[1]
+            }
+        }
+
+        if ($updatedAt) {
+            Write-Log "PACKAGE_UPDATE=$updatedAt"
+        }
+        if ($packageUrl) {
+            Write-Log "PACKAGE_SOURCE=$packageUrl"
+        }
+    } catch {
+        Write-Log "PACKAGE_UPDATE=unreadable"
     }
 }
 
@@ -401,6 +432,7 @@ trap {
 
 # Main script starts here
 Write-Log "Starting SCCM Listener..."
+Write-UpdateMarker
 
 $script:PolicyHost = if ($PolicyHost) { $PolicyHost } else { Get-ListenerIPv4 }
 if (-not $script:PolicyHost) {
