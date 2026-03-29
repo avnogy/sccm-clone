@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+zip_path="sccm-current.zip"
+files=(
+  "README.md"
+  "SCCM-Client.ps1"
+  "SCCM-Config.ps1"
+  "SCCM-Server.ps1"
+)
+
+if command -v zip >/dev/null 2>&1; then
+  zip -q -FS "$zip_path" "${files[@]}"
+else
+  python3 - <<'PY'
+import os
+import zipfile
+
+repo_root = os.getcwd()
+zip_path = os.path.join(repo_root, "sccm-current.zip")
+files = [
+    "README.md",
+    "SCCM-Client.ps1",
+    "SCCM-Config.ps1",
+    "SCCM-Server.ps1",
+]
+
+with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    for name in files:
+        zf.write(os.path.join(repo_root, name), arcname=name)
+PY
+fi
+
+git add -- "$zip_path"
