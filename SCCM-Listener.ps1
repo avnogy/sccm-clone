@@ -15,16 +15,18 @@ to simulate Management Point, Software Update Point, and other SCCM roles.
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . "$scriptDir\SCCM-Config.ps1"
 
-#requires -RunAsAdministrator
+#Requires -RunAsAdministrator
 
 param(
     [string]$SMBSharePath = "",
     [string]$ShareName = "",
-    [string]$ExeName = ""
+    [string]$ExeName = "",
+    [switch]$NoSMB
 )
 
 if ($ShareName) { $SMBShareName = $ShareName }
 if ($ExeName) { $DeployExeName = $ExeName }
+$script:EnableSMB = -not $NoSMB
 
 $script:SMBShareCreated = $false
 
@@ -211,7 +213,7 @@ try {
     Write-Log "ERROR during certificate setup: $_"
 }
 
-if ($SMBSharePath -or $SMBShareName) {
+if ($script:EnableSMB) {
     Write-Log "Setting up SMB deployment share..."
     $createdPath = New-SMBShare -SharePath $SMBSharePath -ShareName $SMBShareName
     if ($createdPath) {

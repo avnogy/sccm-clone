@@ -8,23 +8,41 @@ This package contains two PowerShell scripts to simulate SCCM client-server netw
 2. `SCCM-Listener.ps1` - Run on Domain Controller (requires Admin)
 3. `SCCM-ClientSimulator.ps1` - Run on client machine
 
-## Prerequisites
-
-- PowerShell 5.1+
-- For Listener: Administrator privileges (to bind to ports 80, 443, etc.)
-- Network connectivity between client and DC
-
-## Ports Used
-
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 80/tcp | HTTP | Management Point |
-| 443/tcp | HTTPS | Management Point |
-| 8530/tcp | HTTP | Software Update Point |
-| 8531/tcp | HTTPS | Software Update Point |
-| 10123/tcp | TCP | Client Notification |
-
 ## Usage
+
+### Quick Start - Choose Your Mode
+
+#### Mode 1: Basic HTTP/HTTPS Traffic (no deployment)
+
+```powershell
+# On DC (as Administrator):
+.\SCCM-Listener.ps1 -NoSMB
+
+# On Client:
+.\SCCM-ClientSimulator.ps1
+```
+
+#### Mode 2: With SMB Deployment (downloads and runs file from DC)
+
+```powershell
+# On DC (as Administrator):
+.\SCCM-Listener.ps1
+
+# On Client:
+.\SCCM-ClientSimulator.ps1 -AutoDeploy
+```
+
+#### Mode 3: One-shot (single cycle, no loop)
+
+```powershell
+# On DC:
+.\SCCM-Listener.ps1
+
+# On Client:
+.\SCCM-ClientSimulator.ps1 -OneShot -AutoDeploy
+```
+
+---
 
 ### 1. Start the Listener on DC (Run as Administrator)
 
@@ -37,14 +55,16 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 The listener will:
 - Generate a self-signed certificate for HTTPS ports
 - Listen on all configured ports
+- Create SMB share for deployment (unless -NoSMB is specified)
 - Respond with appropriate SCCM-like responses
 - Log all incoming requests to console
 - Continue running until stopped with Ctrl+C
 
-**With SMB Deployment (optional):**
+**Options:**
 ```powershell
-# Creates SMB share and returns deployment policy
-.\SCCM-Listener.ps1 -SMBShareName "SCCMDeploy" -DeployExeName "sccm_update.exe"
+.\SCCM-Listener.ps1 -NoSMB              # Disable SMB share
+.\SCCM-Listener.ps1 -ShareName "Custom"  # Custom share name
+.\SCCM-Listener.ps1 -ExeName "app.exe"   # Custom executable name
 ```
 
 ### 2. Run the Client Simulator
@@ -84,37 +104,3 @@ The simulator generates traffic that mimics real SCCM client behavior:
 5. **Update Scan**: Checks for software updates
 6. **Heartbeat**: Sends DDR (Discovery Data Record) to MP
 7. **SMB Deployment** (with -AutoDeploy): Downloads and executes file from DC via SMB
-
-## PCAP Capture
-
-To capture the traffic:
-1. Start Wireshark/tcpdump on the client machine
-2. Or configure a span port/mirror port on your switch
-3. Filter suggestions:
-   - `http or tcp.port == 10123 or tcp.port == 8530 or tcp.port == 8531`
-   - `ip.addr == [DC_IP] and (tcp.port == 80 or tcp.port == 443 or tcp.port == 8530 or tcp.port == 8531 or tcp.port == 10123)`
-   - For SMB: `smb or smb2`
-
-## Notes
-
-- The listener uses a self-signed certificate - clients will warn about untrusted cert if using HTTPS
-- All responses are minimal but valid to elicit the expected client behavior
-- Traffic intervals are configurable in the scripts
-- No actual SCCM infrastructure is required - this works against any DC
-- Scripts include retry logic for failed connections
-
-## Troubleshooting
-
-**"Access denied" when starting listener:**
-- Make sure you're running PowerShell as Administrator
-- Check that the ports aren't already in use
-
-**Client can't connect to DC:**
-- Verify network connectivity
-- Check Windows Firewall on DC
-- Confirm the DC discovery is working (check console output)
-
-**No traffic showing in PCAP:**
-- Verify both scripts are running
-- Check that client is resolving DC correctly
-- Ensure traffic is flowing through the captured interface
