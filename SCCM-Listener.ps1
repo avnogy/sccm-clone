@@ -40,6 +40,7 @@ $script:SMBShareCreated = $false
 # Global variables
 $listeners = [System.Collections.ArrayList]::new()
 $certThumbprint = $null
+$maxRequestsPerLoop = 20
 
 function Write-Log {
     param([string]$message)
@@ -516,11 +517,15 @@ try {
                     continue
                 }
 
-                $pendingRequest = $httpListenerState[$listener]
-                if ($pendingRequest -and $pendingRequest.IsCompleted) {
+                for ($requestIndex = 0; $requestIndex -lt $maxRequestsPerLoop; $requestIndex++) {
+                    $pendingRequest = $httpListenerState[$listener]
+                    if (-not $pendingRequest -or -not $pendingRequest.IsCompleted) {
+                        break
+                    }
+
                     $context = $pendingRequest.GetAwaiter().GetResult()
-                    Handle-HttpRequest -context $context -HttpPort $HTTPPort -HttpsPort $HTTPSPort -SupHttpPort $SUPHTTPPort -SupHttpsPort $SUPSHTTPSPort
                     $httpListenerState[$listener] = $listener.GetContextAsync()
+                    Handle-HttpRequest -context $context -HttpPort $HTTPPort -HttpsPort $HTTPSPort -SupHttpPort $SUPHTTPPort -SupHttpsPort $SUPSHTTPSPort
                 }
             } catch {
                 if ($listener.IsListening) {
@@ -530,8 +535,14 @@ try {
             }
         }
 
-        if ($tcpListener -and $tcpListener.Server.IsBound -and $tcpListener.Pending()) {
-            Handle-TcpClient -Client ($tcpListener.AcceptTcpClient())
+        if ($tcpListener -and $tcpListener.Server.IsBound) {
+            for ($clientIndex = 0; $clientIndex -lt $maxRequestsPerLoop; $clientIndex++) {
+                if (-not $tcpListener.Pending()) {
+                    break
+                }
+
+                Handle-TcpClient -Client ($tcpListener.AcceptTcpClient())
+            }
         }
 
         Start-Sleep -Milliseconds 100
