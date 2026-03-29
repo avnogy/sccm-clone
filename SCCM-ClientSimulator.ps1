@@ -68,7 +68,7 @@ public class TrustAllCertsPolicy : ICertificatePolicy {
 }
 
 # DC Discovery Functions
-function Discover-DC {
+function Find-DC {
     Write-Log "Discovering Domain Controller..."
     
     # Method 1: nltest /dsgetdc (most reliable)
@@ -423,7 +423,7 @@ try {
     Write-Log "AutoDeploy mode: $AutoDeploy"
     
     # Discover DC
-    $DC = Discover-DC
+    $DC = Find-DC
     if (-not $DC) {
         Write-Log "FATAL: Could not discover Domain Controller. Exiting." "ERROR"
         exit 1
