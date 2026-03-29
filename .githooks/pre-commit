@@ -8,6 +8,7 @@ zip_path="sccm-current.zip"
 files=(
   "README.md"
   "SCCM-Client.ps1"
+  "SCCM-Client-Startup.ps1"
   "SCCM-Config.ps1"
   "SCCM-Server.ps1"
   "Update-SCCMServer.ps1"
@@ -25,6 +26,7 @@ zip_path = os.path.join(repo_root, "sccm-current.zip")
 files = [
     "README.md",
     "SCCM-Client.ps1",
+    "SCCM-Client-Startup.ps1",
     "SCCM-Config.ps1",
     "SCCM-Server.ps1",
     "Update-SCCMServer.ps1",

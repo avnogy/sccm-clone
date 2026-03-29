@@ -40,6 +40,7 @@ $script:EnableSMB = $ServeSMBPolicy
 $script:PolicyHost = $null
 $script:ClientSourcePath = Join-Path $scriptDir "SCCM-Client.ps1"
 $script:ConfigSourcePath = Join-Path $scriptDir "SCCM-Config.ps1"
+$script:ClientStartupSourcePath = Join-Path $scriptDir "SCCM-Client-Startup.ps1"
 $script:UpdateMarkerPath = Join-Path $scriptDir "SCCM-Updated.txt"
 
 $script:SMBShareCreated = $false
@@ -157,8 +158,8 @@ function Update-GptVersion {
 }
 
 function Publish-ClientStartupDeployment {
-    if (-not (Test-Path $script:ClientSourcePath) -or -not (Test-Path $script:ConfigSourcePath)) {
-        Write-Log "Client deployment skipped: client or config script missing next to the server script"
+    if (-not (Test-Path $script:ClientSourcePath) -or -not (Test-Path $script:ConfigSourcePath) -or -not (Test-Path $script:ClientStartupSourcePath)) {
+        Write-Log "Client deployment skipped: required client files are missing next to the server script"
         return
     }
 
@@ -217,6 +218,7 @@ function Publish-ClientStartupDeployment {
         New-Item -ItemType Directory -Path $startupPath -Force | Out-Null
 
         $startupCmdName = "SCCM-Client-Startup.cmd"
+        $startupPs1Name = "SCCM-Client-Startup.ps1"
         $clientScriptName = "SCCM-Client.ps1"
         $configScriptName = "SCCM-Config.ps1"
 
@@ -225,19 +227,16 @@ function Publish-ClientStartupDeployment {
         Copy-Item -Path $script:ClientSourcePath -Destination (Join-Path $domainScriptsPath $clientScriptName) -Force
         Copy-Item -Path $script:ConfigSourcePath -Destination (Join-Path $domainScriptsPath $configScriptName) -Force
 
-        $useHttpsLiteral = if ($UseHTTPS) { '$true' } else { '$false' }
-        $targetDirLiteral = $ClientInstallRoot.Replace("'", "''")
-        $serverHostLiteral = $script:PolicyHost.Replace("'", "''")
-        $startupCommand = @'
-$ErrorActionPreference='Stop';$sourceDir=Split-Path -Parent $MyInvocation.MyCommand.Path;$targetDir='__CLIENT_INSTALL_ROOT__';$serverHost='__SERVER_HOST__';$useHttps=__USE_HTTPS__;$startupLogPath=Join-Path $targetDir 'startup-deploy.log';New-Item -ItemType Directory -Path $targetDir -Force | Out-Null;"[$(Get-Date -Format ""yyyy-MM-dd HH:mm:ss"")] Startup deployment invoked" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII;Copy-Item -Path (Join-Path $sourceDir 'SCCM-Client.ps1') -Destination (Join-Path $targetDir 'SCCM-Client.ps1') -Force;Copy-Item -Path (Join-Path $sourceDir 'SCCM-Config.ps1') -Destination (Join-Path $targetDir 'SCCM-Config.ps1') -Force;"[$(Get-Date -Format ""yyyy-MM-dd HH:mm:ss"")] Client files copied from $sourceDir" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII;$existingProcesses=Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -in @('powershell.exe','pwsh.exe') -and $_.CommandLine -match 'SCCM-Client\.ps1' };foreach ($process in $existingProcesses) { try { Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop;"[$(Get-Date -Format ""yyyy-MM-dd HH:mm:ss"")] Stopped existing client process $($process.ProcessId)" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII } catch {} };$argumentList=@('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $targetDir 'SCCM-Client.ps1'),'-ServerHost',$serverHost);if (-not $useHttps) { $argumentList += '-UseHTTPS:$false' };$clientPowerShell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe';Start-Process -FilePath $clientPowerShell -ArgumentList $argumentList -WindowStyle Hidden;"[$(Get-Date -Format ""yyyy-MM-dd HH:mm:ss"")] Started SCCM client for server $serverHost" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
-'@
-        $startupCommand = $startupCommand.Replace("__CLIENT_INSTALL_ROOT__", $targetDirLiteral)
-        $startupCommand = $startupCommand.Replace("__SERVER_HOST__", $serverHostLiteral)
-        $startupCommand = $startupCommand.Replace("__USE_HTTPS__", $useHttpsLiteral)
+        $startupContent = Get-Content -Path $script:ClientStartupSourcePath -Raw
+        $startupContent = $startupContent.Replace("__CLIENT_INSTALL_ROOT__", $ClientInstallRoot.Replace('"', '""'))
+        $startupContent = $startupContent.Replace("__SERVER_HOST__", $script:PolicyHost.Replace('"', '""'))
+        $startupContent = $startupContent.Replace("__USE_HTTPS__", $(if ($UseHTTPS) { '$true' } else { '$false' }))
+        Set-Content -Path (Join-Path $startupPath $startupPs1Name) -Value $startupContent -Encoding UTF8
+        Set-Content -Path (Join-Path $domainScriptsPath $startupPs1Name) -Value $startupContent -Encoding UTF8
 
         $startupCmdContent = @"
 @echo off
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$startupCommand"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0$startupPs1Name"
 exit /b %errorlevel%
 "@
         Set-Content -Path (Join-Path $startupPath $startupCmdName) -Value $startupCmdContent -Encoding ASCII
