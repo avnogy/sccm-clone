@@ -14,6 +14,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $zipPath = Join-Path $scriptDir "sccm-current.zip"
 $downloadPath = Join-Path $scriptDir "sccm-current.zip.download"
 $updateMarkerPath = Join-Path $scriptDir "SCCM-Updated.txt"
+$stagingPath = Join-Path $scriptDir "sccm-update-staging"
 
 Write-Host "Downloading latest package from $PackageUrl"
 $previousSecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol
@@ -54,8 +55,34 @@ if (-not (Test-Path $zipPath)) {
     throw "Package staging failed: $zipPath was not created"
 }
 
-Write-Host "Extracting package to $scriptDir"
-Expand-Archive -Path $zipPath -DestinationPath $scriptDir -Force
+if (Test-Path $stagingPath) {
+    Remove-Item -Path $stagingPath -Recurse -Force
+}
+
+Write-Host "Extracting package to staging directory $stagingPath"
+Expand-Archive -Path $zipPath -DestinationPath $stagingPath -Force
+
+$preserveNames = @(
+    [System.IO.Path]::GetFileName($MyInvocation.MyCommand.Path),
+    [System.IO.Path]::GetFileName($zipPath),
+    [System.IO.Path]::GetFileName($downloadPath),
+    [System.IO.Path]::GetFileName($updateMarkerPath),
+    [System.IO.Path]::GetFileName($stagingPath),
+    ".git",
+    ".githooks"
+)
+
+Write-Host "Removing existing package files from $scriptDir"
+Get-ChildItem -Path $scriptDir -Force | Where-Object {
+    $preserveNames -notcontains $_.Name
+} | Remove-Item -Recurse -Force
+
+Write-Host "Copying refreshed package into $scriptDir"
+Get-ChildItem -Path $stagingPath -Force | ForEach-Object {
+    Copy-Item -Path $_.FullName -Destination $scriptDir -Recurse -Force
+}
+
+Remove-Item -Path $stagingPath -Recurse -Force
 
 $updateMarker = @"
 UPDATED_AT=$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
