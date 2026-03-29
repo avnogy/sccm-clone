@@ -20,6 +20,7 @@ param(
     [string]$ExeName = "",
     [string]$ClientStartupGpoName = "SCCM Simulator Client Startup",
     [string]$ClientInstallRoot = "C:\ProgramData\SCCMSim",
+    [switch]$PublishClientOnly,
     [switch]$ServeSMBPolicy
 )
 
@@ -388,6 +389,11 @@ if (-not $script:PolicyHost) {
 }
 
 Publish-ClientStartupDeployment
+
+if ($PublishClientOnly) {
+    Write-Log "Client startup deployment refresh complete. Exiting without starting listeners."
+    exit 0
+}
 
 # Generate or use existing certificate for HTTPS ports
 try {

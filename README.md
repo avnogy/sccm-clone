@@ -57,7 +57,7 @@ If you want the server to automatically roll out the current client script to do
 - `SCCM-Config.ps1`: shared configuration
 - `SCCM-Server.ps1`: mock SCCM server-side listener
 - `SCCM-Client.ps1`: mock SCCM client
-- `Update-SCCMServer.ps1`: downloads the latest zip and extracts it in place
+- `Update-SCCMServer.ps1`: downloads the latest zip, replaces the package files in place, and refreshes the published client deployment
 
 ## Recording the Two Stages
 
@@ -69,7 +69,7 @@ If you want to refresh the local files from GitHub before launch, you can use:
 .\Update-SCCMServer.ps1
 ```
 
-Then start the server normally with the options you want.
+That updates the local package folder and republishes the current client files into SYSVOL/GPO. Then start the server normally with the options you want.
 
 ### Stage 1: Normal Day-to-Day SCCM Traffic
 
@@ -164,6 +164,7 @@ Notes:
 - `-ClientStartupGpoName` controls the dedicated computer-startup GPO that the server refreshes each run.
 - `-ClientInstallRoot` controls where the startup script copies the client locally on each machine before launching it.
 - The server does not generate the deployment file. The UNC path must already point to a real payload hosted elsewhere.
+- `-PublishClientOnly` refreshes the startup GPO/SYSVOL client deployment and exits without starting listeners.
 
 ## Client Behavior
 

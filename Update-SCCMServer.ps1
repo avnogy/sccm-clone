@@ -101,5 +101,13 @@ if (-not (Test-Path (Join-Path $scriptDir "SCCM-Server.ps1"))) {
     throw "Server script not found after extraction"
 }
 
+$serverScriptPath = Join-Path $scriptDir "SCCM-Server.ps1"
+Write-Host "Refreshing published client deployment"
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $serverScriptPath -PublishClientOnly
+if ($LASTEXITCODE -ne 0) {
+    throw "Client deployment refresh failed with exit code $LASTEXITCODE"
+}
+
 Write-Host "Update complete. Marker written to $updateMarkerPath"
+Write-Host "Client startup deployment was refreshed."
 Write-Host "Start the server manually with .\\SCCM-Server.ps1"
