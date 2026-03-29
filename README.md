@@ -57,18 +57,19 @@ If you want the server to automatically roll out the current client script to do
 - `SCCM-Config.ps1`: shared configuration
 - `SCCM-Server.ps1`: mock SCCM server-side listener
 - `SCCM-Client.ps1`: mock SCCM client
-- `Update-SCCMServer.ps1`: downloads the latest zip, extracts it in place, and starts the server
+- `Update-SCCMServer.ps1`: downloads the latest zip and extracts it in place
 
 ## Recording the Two Stages
 
 Your two intended capture stages map directly to the server mode you start.
 
-If you want the server to self-update from GitHub before launch, you can use:
+If you want to refresh the local files from GitHub before launch, you can use:
 
 ```powershell
 .\Update-SCCMServer.ps1
-.\Update-SCCMServer.ps1 -ServeSMBPolicy
 ```
+
+Then start the server normally with the options you want.
 
 ### Stage 1: Normal Day-to-Day SCCM Traffic
 
