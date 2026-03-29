@@ -1,108 +1,168 @@
 # SCCM Network Traffic Simulator
 
-This package contains two PowerShell scripts to simulate SCCM client-server network traffic for generating PCAP files:
+This repo contains a small PowerShell-based lab setup for generating SCCM-like client/server traffic for packet capture and testing.
+
+It has two main roles:
+
+- `SCCM-Listener.ps1`: mock Management Point / Software Update Point / notification listener
+- `SCCM-ClientSimulator.ps1`: mock SCCM client that discovers a host and generates recurring traffic
+
+`SCCM-Config.ps1` contains the shared ports, intervals, retry settings, and SMB deployment defaults used by both scripts.
+
+## What It Simulates
+
+The listener exposes these endpoints:
+
+- `80/tcp`: HTTP Management Point
+- `443/tcp`: HTTPS Management Point
+- `8530/tcp`: HTTP Software Update Point
+- `8531/tcp`: HTTPS Software Update Point
+- `10123/tcp`: client notification TCP listener
+
+The client simulator generates:
+
+- location requests to `/sms_ls.srf`
+- policy requests to `/ccm_system/request`
+- notification polls on TCP `10123`
+- update scan requests to `/SimpleAuthwebservice/SimpleAuth.asmx`
+- heartbeats to `/sms_mp`
+- optional SMB download and execution when `-AutoDeploy` is used
+
+## Requirements
+
+- Windows PowerShell or PowerShell on Windows
+- Administrator privileges for `SCCM-Listener.ps1`
+- A Windows environment with the required features available for:
+  - `HttpListener` on privileged ports
+  - `New-SmbShare` / `Get-SmbShare`
+  - certificate creation and `netsh http add sslcert`
+- For domain-controller discovery in the client:
+  - at least one of `nltest`, `LOGONSERVER`, `USERDNSDOMAIN`, or current-domain ADSI lookup must work
+
+The listener does not have to run on an actual Domain Controller. It can run on any reachable Windows host that satisfies the requirements above.
 
 ## Files
 
-1. `SCCM-Config.ps1` - Shared configuration (dot-sourced by both scripts)
-2. `SCCM-Listener.ps1` - Run on Domain Controller (requires Admin)
-3. `SCCM-ClientSimulator.ps1` - Run on client machine
+- `SCCM-Config.ps1`: shared configuration
+- `SCCM-Listener.ps1`: mock SCCM server-side listener
+- `SCCM-ClientSimulator.ps1`: mock SCCM client
 
-## Usage
+## Quick Start
 
-### Quick Start - Choose Your Mode
+### Mode 1: Traffic Only
 
-#### Mode 1: Basic HTTP/HTTPS Traffic (no deployment)
+Run the listener without SMB deployment:
 
 ```powershell
-# On DC (as Administrator):
+# On the listener host, as Administrator
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\SCCM-Listener.ps1 -NoSMB
 
-# On Client:
+# On the client host
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\SCCM-ClientSimulator.ps1
 ```
 
-#### Mode 2: With SMB Deployment (downloads and runs file from DC)
+### Mode 2: Traffic Plus SMB Deployment
+
+Run the listener with the default SMB share and deployment script:
 
 ```powershell
-# On DC (as Administrator):
+# On the listener host, as Administrator
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\SCCM-Listener.ps1
 
-# On Client:
+# On the client host
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\SCCM-ClientSimulator.ps1 -AutoDeploy
 ```
 
-#### Mode 3: One-shot (single cycle, no loop)
+### Mode 3: One-Shot
+
+Send one immediate cycle and exit:
 
 ```powershell
-# On DC:
+# On the listener host, as Administrator
 .\SCCM-Listener.ps1
 
-# On Client:
+# On the client host
 .\SCCM-ClientSimulator.ps1 -OneShot -AutoDeploy
 ```
 
-`-OneShot` now sends one immediate cycle of traffic and exits.
+## Listener Behavior
 
----
+`SCCM-Listener.ps1`:
 
-### 1. Start the Listener on DC (Run as Administrator)
+- creates or reuses a self-signed certificate for HTTPS listeners
+- binds certificates to ports `443` and `8531`
+- starts listeners on the configured HTTP, HTTPS, SUP, and notification ports
+- optionally creates an SMB share and publishes a deployment script
+- logs inbound requests and returns mock SCCM-style responses
+- cleans up listeners, certificate bindings, and the SMB share on exit
+
+### Listener Options
 
 ```powershell
-# On the Domain Controller
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-Listener.ps1
+.\SCCM-Listener.ps1 -NoSMB
+.\SCCM-Listener.ps1 -ShareName "CustomShare"
+.\SCCM-Listener.ps1 -SMBSharePath "C:\Temp\SCCMDeploy"
+.\SCCM-Listener.ps1 -ExeName "update.cmd"
 ```
 
-The listener will:
-- Generate a self-signed certificate for HTTPS ports
-- Listen on all configured ports
-- Create SMB share for deployment (unless -NoSMB is specified)
-- Respond with appropriate SCCM-like responses
-- Log all incoming requests to console
-- Continue running until stopped with Ctrl+C
+Notes:
 
-**Options:**
+- `-ExeName` is normalized to a `.cmd` script if another extension is supplied.
+- The generated deployment file is a simple command script that appends to `C:\sccm_deployed.log`.
+
+## Client Behavior
+
+`SCCM-ClientSimulator.ps1`:
+
+- tries several methods to discover a target host
+- uses HTTPS by default
+- accepts self-signed certificates when HTTPS is enabled
+- retries HTTP requests according to the shared config
+- runs continuously until stopped, unless `-OneShot` is used
+- initializes its timers so the first cycle is sent immediately
+
+### Client Options
+
 ```powershell
-.\SCCM-Listener.ps1 -NoSMB              # Disable SMB share
-.\SCCM-Listener.ps1 -ShareName "Custom"  # Custom share name
-.\SCCM-Listener.ps1 -ExeName "app.cmd"   # Custom deployment script name
-```
-
-### 2. Run the Client Simulator
-
-```powershell
-# On a client machine
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\SCCM-ClientSimulator.ps1
+.\SCCM-ClientSimulator.ps1 -OneShot
+.\SCCM-ClientSimulator.ps1 -UseHTTPS:$false
+.\SCCM-ClientSimulator.ps1 -AutoDeploy
+.\SCCM-ClientSimulator.ps1 -Verbose
 ```
 
-The client simulator will:
-- Discover the Domain Controller using multiple methods
-- Generate realistic SCCM client traffic patterns:
-  - Location requests (/sms_ls.srf) every 30 seconds
-  - Policy requests (/ccm_system/request) every 60 seconds
-  - Notification polls (TCP 10123) every 30 seconds
-  - Update scans (/SimpleAuthwebservice/SimpleAuth.asmx) every 60 seconds
-  - Heartbeats (/sms_mp) every 120 seconds
-- Continue running continuously until stopped with Ctrl+C
-- Use HTTPS by default (will accept self-signed certificates)
+Notes:
 
-### Options for Client Simulator
+- `-OneShot` sends one immediate cycle of all request types, then exits.
+- `-AutoDeploy` requests policy content, copies the referenced SMB payload locally, and executes it.
+- `.cmd` and `.bat` payloads are executed via `cmd.exe`.
 
-- `-OneShot`: Run through one cycle of all traffic types then exit
-- `-UseHTTPS:$false`: Force HTTP only (no SSL/TLS)
-- `-AutoDeploy`: Request and execute SMB deployment from DC
-- `-Verbose`: Show detailed debugging information
+## Default Configuration
 
-## Traffic Patterns
+Current defaults from `SCCM-Config.ps1`:
 
-The simulator generates traffic that mimics real SCCM client behavior:
+- HTTP MP: `80`
+- HTTPS MP: `443`
+- HTTP SUP: `8530`
+- HTTPS SUP: `8531`
+- notification TCP: `10123`
+- location request interval: `30` seconds
+- policy request interval: `60` seconds
+- notification interval: `30` seconds
+- update scan interval: `60` seconds
+- heartbeat interval: `120` seconds
+- deployment share name: `SCCMDeploy`
+- deployment file name: `sccm_update.cmd`
+- request retries: `3`
+- retry delay: `5` seconds
 
-1. **Initial Discovery**: DNS queries and LDAP bind to DC
-2. **Location Request**: Finds available MPs and SUPs
-3. **Policy Request**: Downloads client policies
-4. **Notification Poll**: Checks for pending actions on TCP 10123
-5. **Update Scan**: Checks for software updates
-6. **Heartbeat**: Sends DDR (Discovery Data Record) to MP
-7. **SMB Deployment** (with -AutoDeploy): Downloads and executes file from DC via SMB
+## Limitations
+
+- This is a traffic simulator, not a real SCCM implementation.
+- Response bodies are simplified and only cover the endpoints implemented in the scripts.
+- Domain discovery depends on the local Windows environment.
+- HTTPS handling is intentionally permissive for lab use and should not be treated as production-safe behavior.
