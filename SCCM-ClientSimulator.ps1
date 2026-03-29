@@ -204,7 +204,7 @@ function Send-LocationRequest {
     
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
-    $url = "$protocol://$DC`:$port/sms_ls.srf"
+    $url = "$protocol://${DC}:${port}/sms_ls.srf"
     
     $clientIP = Get-ClientIP
     $body = @"
@@ -235,7 +235,7 @@ function Send-PolicyRequest {
     
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
-    $url = "$protocol://$DC`:$port/ccm_system/request"
+    $url = "$protocol://${DC}:${port}/ccm_system/request"
     
     $body = @"
 <CCM_MethodInvocation xmlns="http://schemas.microsoft.com/SystemCenterConfigurationManager/2009">
@@ -304,7 +304,7 @@ function Send-UpdateScan {
     
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $SUPSHTTPSPort } else { $SUPHTTPPort }
-    $url = "$protocol://$DC`:$port/SimpleAuthwebservice/SimpleAuth.asmx"
+    $url = "$protocol://${DC}:${port}/SimpleAuthwebservice/SimpleAuth.asmx"
     
     $body = @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -334,7 +334,7 @@ function Send-Heartbeat {
     
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
-    $url = "$protocol://$DC`:$port/sms_mp"
+    $url = "$protocol://${DC}:${port}/sms_mp"
     
     $clientIP = Get-ClientIP
     $timestamp = (Get-Date).ToUniversalTime().ToString("o")
