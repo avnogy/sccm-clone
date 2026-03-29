@@ -2,15 +2,17 @@
 .SYNOPSIS
 SCCM Client Simulator - Generates realistic SCCM client network traffic
 .DESCRIPTION
-This script discovers the Domain Controller and generates SCCM-like traffic patterns
+This script discovers or targets a listener host and generates SCCM-like traffic patterns
 including location requests, policy requests, notification polls, update scans, and heartbeats.
 .USAGE
     .\SCCM-ClientSimulator.ps1
+    .\SCCM-ClientSimulator.ps1 -ServerHost 192.168.1.10
     .\SCCM-ClientSimulator.ps1 -Verbose
 #>
 
 [CmdletBinding()]
 param(
+    [string]$ServerHost = "",
     [switch]$UseHTTPS
 )
 
@@ -53,9 +55,14 @@ if ($UseHTTPS) {
     }
 }
 
-# DC Discovery Functions
-function Find-DC {
-    Write-Log "Discovering Domain Controller..."
+# Listener host discovery functions
+function Find-ListenerHost {
+    if ($ServerHost) {
+        Write-Log "Using configured listener host: $ServerHost"
+        return $ServerHost
+    }
+
+    Write-Log "Discovering listener host..."
 
     # Method 1: nltest /dsgetdc (most reliable)
     try {
@@ -64,7 +71,7 @@ function Find-DC {
         if ($LASTEXITCODE -eq 0) {
             if ($nltestOutput -match "DC:\\\\\\([^\\\s]+)") {
                 $dc = $matches[1].TrimEnd('\')
-                Write-Log "Discovered DC via nltest: $dc"
+                Write-Log "Discovered listener host via nltest: $dc"
                 return $dc
             }
         }
@@ -83,7 +90,7 @@ function Find-DC {
             if ($srvRecords) {
                 $sorted = $srvRecords | Sort-Object Priority, Weight -Descending
                 $dc = $sorted[0].NameTarget.TrimEnd('.')
-                Write-Log "Discovered DC via SRV record ($srvQuery): $dc"
+                Write-Log "Discovered listener host via SRV record ($srvQuery): $dc"
                 return $dc
             }
         }
@@ -95,7 +102,7 @@ function Find-DC {
     try {
         if ($env:LOGONSERVER) {
             $dc = $env:LOGONSERVER -Replace '^\\\\', ''
-            Write-Log "Discovered DC via LOGONSERVER: $dc"
+            Write-Log "Discovered listener host via LOGONSERVER: $dc"
             return $dc
         }
     } catch {
@@ -108,14 +115,14 @@ function Find-DC {
         $domain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
         if ($domain) {
             $dc = ($domain.DomainControllers | Select-Object -First 1).Name
-            Write-Log "Discovered DC via ADSI: $dc"
+            Write-Log "Discovered listener host via ADSI: $dc"
             return $dc
         }
     } catch {
         Write-VerboseLog "ADSI lookup failed: $_"
     }
 
-    Write-Log "ERROR: Could not discover Domain Controller using any method" "ERROR"
+    Write-Log "ERROR: Could not discover listener host using any method" "ERROR"
     return $null
 }
 
@@ -186,11 +193,11 @@ function Get-ClientIP {
 
 # SCCM Traffic Functions
 function Send-LocationRequest {
-    param([string]$DC)
+    param([string]$ListenerHost)
 
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
-    $url = "${protocol}://${DC}:${port}/sms_ls.srf"
+    $url = "${protocol}://${ListenerHost}:${port}/sms_ls.srf"
 
     $clientIP = Get-ClientIP
     $body = @"
@@ -217,11 +224,11 @@ function Send-LocationRequest {
 }
 
 function Send-PolicyRequest {
-    param([string]$DC)
+    param([string]$ListenerHost)
 
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
-    $url = "${protocol}://${DC}:${port}/ccm_system/request"
+    $url = "${protocol}://${ListenerHost}:${port}/ccm_system/request"
 
     $body = @"
 <CCM_MethodInvocation xmlns="http://schemas.microsoft.com/SystemCenterConfigurationManager/2009">
@@ -246,12 +253,12 @@ function Send-PolicyRequest {
 }
 
 function Send-NotificationPoll {
-    param([string]$DC)
+    param([string]$ListenerHost)
 
     try {
-        Write-VerboseLog "Attempting TCP connection to ${DC}:${NotifyPort} for notification poll"
+        Write-VerboseLog "Attempting TCP connection to ${ListenerHost}:${NotifyPort} for notification poll"
         $tcpClient = New-Object System.Net.Sockets.TcpClient
-        $asyncResult = $tcpClient.BeginConnect($DC, $NotifyPort, $null, $null)
+        $asyncResult = $tcpClient.BeginConnect($ListenerHost, $NotifyPort, $null, $null)
         $waitHandle = $asyncResult.AsyncWaitHandle
 
         try {
@@ -270,24 +277,24 @@ function Send-NotificationPoll {
             }
 
             $tcpClient.Close()
-            Write-Log "Notification poll sent to TCP ${DC}:${NotifyPort} - Connection successful"
+            Write-Log "Notification poll sent to TCP ${ListenerHost}:${NotifyPort} - Connection successful"
             return $true
         } finally {
             $waitHandle.Dispose()
             if ($tcpClient.Connected) { $tcpClient.Close() }
         }
     } catch {
-        Write-ErrorLog "Notification poll failed to TCP ${DC}:${NotifyPort}: $($_.Exception.Message)"
+        Write-ErrorLog "Notification poll failed to TCP ${ListenerHost}:${NotifyPort}: $($_.Exception.Message)"
         return $false
     }
 }
 
 function Send-UpdateScan {
-    param([string]$DC)
+    param([string]$ListenerHost)
 
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $SUPSHTTPSPort } else { $SUPHTTPPort }
-    $url = "${protocol}://${DC}:${port}/SimpleAuthwebservice/SimpleAuth.asmx"
+    $url = "${protocol}://${ListenerHost}:${port}/SimpleAuthwebservice/SimpleAuth.asmx"
 
     $body = @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -313,11 +320,11 @@ function Send-UpdateScan {
 }
 
 function Send-Heartbeat {
-    param([string]$DC)
+    param([string]$ListenerHost)
 
     $protocol = if ($UseHTTPS) { "https" } else { "http" }
     $port = if ($UseHTTPS) { $HTTPSPort } else { $HTTPPort }
-    $url = "${protocol}://${DC}:${port}/sms_mp"
+    $url = "${protocol}://${ListenerHost}:${port}/sms_mp"
 
     $clientIP = Get-ClientIP
     $timestamp = (Get-Date).ToUniversalTime().ToString("o")
@@ -408,14 +415,14 @@ try {
     Write-Log "Starting SCCM Client Simulator..."
     Write-Log "Using HTTPS: $UseHTTPS"
 
-    # Discover DC
-    $DC = Find-DC
-    if (-not $DC) {
-        Write-Log "FATAL: Could not discover Domain Controller. Exiting." "ERROR"
+    # Discover or use configured listener host
+    $listenerHost = Find-ListenerHost
+    if (-not $listenerHost) {
+        Write-Log "FATAL: Could not determine listener host. Exiting." "ERROR"
         exit 1
     }
 
-    Write-Log "Using DC: $DC"
+    Write-Log "Using listener host: $listenerHost"
 
     # Initialize timers
     $timers = @{}
@@ -430,7 +437,7 @@ try {
 
         # Location Request
         if (($now - $timers.LocationRequest).TotalSeconds -ge $Intervals.LocationRequest) {
-            if (Send-LocationRequest -DC $DC) {
+            if (Send-LocationRequest -ListenerHost $listenerHost) {
                 $timers.LocationRequest = $now
                 $anyActivity = $true
             }
@@ -438,7 +445,7 @@ try {
 
         # Notification Poll
         if (($now - $timers.Notification).TotalSeconds -ge $Intervals.Notification) {
-            if (Send-NotificationPoll -DC $DC) {
+            if (Send-NotificationPoll -ListenerHost $listenerHost) {
                 $timers.Notification = $now
                 $anyActivity = $true
             }
@@ -446,7 +453,7 @@ try {
 
         # Policy Request
         if (($now - $timers.PolicyRequest).TotalSeconds -ge $Intervals.PolicyRequest) {
-            $policyContent = Send-PolicyRequest -DC $DC
+            $policyContent = Send-PolicyRequest -ListenerHost $listenerHost
 
             if ($null -ne $policyContent) {
                 $timers.PolicyRequest = $now
@@ -460,7 +467,7 @@ try {
 
         # Update Scan
         if (($now - $timers.UpdateScan).TotalSeconds -ge $Intervals.UpdateScan) {
-            if (Send-UpdateScan -DC $DC) {
+            if (Send-UpdateScan -ListenerHost $listenerHost) {
                 $timers.UpdateScan = $now
                 $anyActivity = $true
             }
@@ -468,7 +475,7 @@ try {
 
         # Heartbeat
         if (($now - $timers.Heartbeat).TotalSeconds -ge $Intervals.Heartbeat) {
-            if (Send-Heartbeat -DC $DC) {
+            if (Send-Heartbeat -ListenerHost $listenerHost) {
                 $timers.Heartbeat = $now
                 $anyActivity = $true
             }

@@ -39,6 +39,8 @@ The client simulator generates:
 - For client target discovery:
   - at least one of `nltest`, `LOGONSERVER`, `USERDNSDOMAIN`, or current-domain ADSI lookup must work
 
+If discovery is not convenient in your lab, clients can be pointed directly at the listener with `-ServerHost`.
+
 The listener does not have to run on an actual Domain Controller. It can run on any reachable Windows host that satisfies the requirements above.
 
 ## Files
@@ -70,7 +72,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 # On each client
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-ClientSimulator.ps1
+.\SCCM-ClientSimulator.ps1 -ServerHost 192.168.1.10
 ```
 
 What happens:
@@ -100,7 +102,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 # On each client
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-ClientSimulator.ps1
+.\SCCM-ClientSimulator.ps1 -ServerHost 192.168.1.10
 ```
 
 What happens:
@@ -144,6 +146,7 @@ Notes:
 `SCCM-ClientSimulator.ps1`:
 
 - tries several methods to discover a target host
+- can be pointed directly at a listener host with `-ServerHost`
 - uses HTTPS by default
 - accepts self-signed certificates when HTTPS is enabled
 - retries HTTP requests according to the shared config
@@ -156,6 +159,7 @@ Notes:
 
 ```powershell
 .\SCCM-ClientSimulator.ps1
+.\SCCM-ClientSimulator.ps1 -ServerHost 192.168.1.10
 .\SCCM-ClientSimulator.ps1 -UseHTTPS:$false
 .\SCCM-ClientSimulator.ps1 -Verbose
 ```
@@ -163,6 +167,7 @@ Notes:
 Notes:
 
 - there is no client-side deployment flag; deployment behavior is controlled entirely by the server response
+- `-ServerHost` is the simplest way to run several lab clients against one known listener
 - `.cmd` and `.bat` payloads are executed via `cmd.exe`
 
 ## Default Configuration
@@ -192,5 +197,5 @@ One listener can serve multiple clients at the same time. The listener loop drai
 
 - This is a traffic simulator, not a real SCCM implementation.
 - Response bodies are simplified and only cover the endpoints implemented in the scripts.
-- Domain discovery depends on the local Windows environment.
+- Listener-host discovery depends on the local Windows environment.
 - HTTPS handling is intentionally permissive for lab use and should not be treated as production-safe behavior.
