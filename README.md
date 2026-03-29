@@ -124,7 +124,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 What happens:
 
-- the listener creates the SMB share and deployment script
+- the listener does not create the SMB share or payload; it only advertises the configured UNC path
 - the first stage-2 policy response for each client includes a `CommandLine` UNC path of the form `\\IP\Share\file`
 - the server sends that deployment policy once per client per server run
 - every client requests policy, recognizes the deployment path in the response, copies the file over SMB, and executes it
@@ -139,10 +139,10 @@ What happens:
 - binds certificates to ports `443` and `8531`
 - starts listeners on the configured HTTP, HTTPS, SUP, and notification ports
 - serves normal SCCM-like policy responses by default
-- creates an SMB share and sends one SMB deployment policy per client only when `-ServeSMBPolicy` is used
+- sends one SMB deployment policy per client only when `-ServeSMBPolicy` is used
 - refreshes a dedicated domain computer-startup GPO on each run so the latest client script is published into SYSVOL
 - logs inbound requests and returns mock SCCM-style responses
-- cleans up listeners, certificate bindings, and the SMB share on exit
+- cleans up listeners and certificate bindings on exit
 
 ### Listener Options
 
@@ -158,12 +158,12 @@ What happens:
 
 Notes:
 
-- `-ServeSMBPolicy` enables the stage-2 behavior: the listener creates the SMB share and sends one deployment policy per client from `/ccm_system/request`.
+- `-ServeSMBPolicy` enables the stage-2 behavior: the listener sends one deployment policy per client from `/ccm_system/request`.
 - `-ExeName` is normalized to a `.cmd` script if another extension is supplied.
 - `SMBPolicyHost` in `SCCM-Config.ps1` controls the host part placed in the policy `CommandLine` UNC path. If it is blank, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
 - `-ClientStartupGpoName` controls the dedicated computer-startup GPO that the server refreshes each run.
 - `-ClientInstallRoot` controls where the startup script copies the client locally on each machine before launching it.
-- The generated deployment file is a simple command script that appends to `C:\sccm_deployed.log`.
+- The server does not generate the deployment file. The UNC path must already point to a real payload hosted elsewhere.
 
 ## Client Behavior
 

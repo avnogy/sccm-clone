@@ -41,7 +41,6 @@ $script:ConfigSourcePath = Join-Path $scriptDir "SCCM-Config.ps1"
 $script:ClientStartupSourcePath = Join-Path $scriptDir "SCCM-Client-Startup.ps1"
 $script:UpdateMarkerPath = Join-Path $scriptDir "SCCM-Updated.txt"
 
-$script:SMBShareCreated = $false
 $script:DeploymentAssignments = @{}
 
 # Global variables
@@ -285,70 +284,6 @@ exit /b %errorlevel%
     }
 }
 
-function New-SMBShare {
-    param([string]$SharePath, [string]$ShareName)
-    
-    if (-not $SharePath) {
-        $SharePath = $SMBSharePath
-    }
-    
-    if (-not (Test-Path $SharePath)) {
-        New-Item -ItemType Directory -Path $SharePath -Force | Out-Null
-        Write-Log "Created SMB share directory: $SharePath"
-    }
-    
-    $deployExePath = Join-Path $SharePath $script:DeployExeName
-    $dummyExeContent = @"
-@echo off
-echo SCCM Deployed Executable Ran at %DATE% %TIME% >> C:\sccm_deployed.log
-"@
-    $targetSizeBytes = [Math]::Max(4096, ($DeploymentFileSizeKB * 1KB))
-    $paddingBuilder = New-Object System.Text.StringBuilder
-    while (($dummyExeContent.Length + $paddingBuilder.Length) -lt $targetSizeBytes) {
-        [void]$paddingBuilder.AppendLine(("REM package-chunk-{0:0000}-{1}" -f $paddingBuilder.Length, ([guid]::NewGuid().ToString("N"))))
-    }
-    $dummyExeContent += $paddingBuilder.ToString()
-    [System.IO.File]::WriteAllText($deployExePath, $dummyExeContent)
-    $deploySizeKB = [Math]::Round(((Get-Item $deployExePath).Length / 1KB), 1)
-    Write-Log "Created deployment executable: $deployExePath (${deploySizeKB} KB)"
-    
-    try {
-        $existingShare = Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue
-        if ($existingShare) {
-            Remove-SmbShare -Name $ShareName -Force -ErrorAction SilentlyContinue
-        }
-        
-        New-SmbShare -Name $ShareName -Path $SharePath -ChangeAccess "Everyone" -Force | Out-Null
-        $script:SMBShareCreated = $true
-        Write-Log "Created SMB share: \\$env:COMPUTERNAME\$ShareName"
-        
-        $acl = Get-Acl $SharePath
-        $acl.SetAccessRuleProtection($false, $false)
-        $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule("Everyone","FullControl","ContainerInherit,ObjectInherit","None","Allow")
-        $acl.AddAccessRule($accessRule)
-        Set-Acl -Path $SharePath -AclObject $acl
-        
-        return $SharePath
-    } catch {
-        Write-Log "Failed to create SMB share: $_"
-        return $null
-    }
-}
-
-function Remove-SMBShare {
-    param([string]$ShareName)
-    
-    try {
-        $share = Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue
-        if ($share) {
-            Remove-SmbShare -Name $ShareName -Force
-            Write-Log "Removed SMB share: $ShareName"
-        }
-    } catch {
-        Write-Log "Failed to remove SMB share: $_"
-    }
-}
-
 function Generate-SelfSignedCert {
     param([string]$Subject = "CN=SCCM-Listener")
     
@@ -424,10 +359,6 @@ function Cleanup {
         Unbind-Certificate -Port $SUPSHTTPSPort
     }
     
-    if ($script:SMBShareCreated) {
-        Remove-SMBShare -ShareName $script:SMBShareName
-    }
-    
     Write-Log "Cleanup complete."
 }
 
@@ -484,12 +415,8 @@ try {
 }
 
 if ($script:EnableSMB) {
-    Write-Log "Setting up SMB deployment share..."
-    $createdPath = New-SMBShare -SharePath $SMBSharePath -ShareName $SMBShareName
-    if ($createdPath) {
-        Write-Log "SMB deployment share ready at: \\$env:COMPUTERNAME\$SMBShareName"
-        Write-Log "Policy deployment path is: \\$script:PolicyHost\$script:SMBShareName\$script:DeployExeName"
-    }
+    Write-Log "Stage 2 enabled. Server will advertise deployment path only."
+    Write-Log "Configured deployment path is: \\$script:PolicyHost\$script:SMBShareName\$script:DeployExeName"
 }
 
 # Function to handle HTTP requests (synchronous)
@@ -550,7 +477,7 @@ $mpHistory    </Capabilities>
                 if ($request.HttpMethod -eq "POST") {
                     $policyAssignments = New-PaddedXmlEntries -ElementName "AssignmentID" -Count $PolicyResponsePaddingEntries -Prefix "ADV"
                     $deploymentClientKey = Get-DeploymentClientKey -Request $request
-                    $shouldSendDeployment = $script:EnableSMB -and $script:SMBShareCreated -and -not $script:DeploymentAssignments.ContainsKey($deploymentClientKey)
+                    $shouldSendDeployment = $script:EnableSMB -and -not $script:DeploymentAssignments.ContainsKey($deploymentClientKey)
 
                     if ($shouldSendDeployment) {
                         $sMBPath = "\\$($script:PolicyHost)\$script:SMBShareName\$script:DeployExeName"
