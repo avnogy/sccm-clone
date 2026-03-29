@@ -10,15 +10,15 @@ including location requests, policy requests, notification polls, update scans, 
     .\SCCM-ClientSimulator.ps1 -Verbose
 #>
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-. "$scriptDir\SCCM-Config.ps1"
-
 [CmdletBinding()]
 param(
     [switch]$OneShot,
     [switch]$UseHTTPS,
     [switch]$AutoDeploy
 )
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. "$scriptDir\SCCM-Config.ps1"
 
 if (-not $PSBoundParameters.ContainsKey('UseHTTPS')) { $UseHTTPS = $true }
 
@@ -35,7 +35,7 @@ function Write-Log {
 
 function Write-VerboseLog {
     param([string]$message)
-    if ($PSCmdlet.Verbose) {
+    if ($VerbosePreference -ne 'SilentlyContinue') {
         Write-Log $message "VERBOSE"
     }
 }
@@ -48,18 +48,7 @@ function Write-ErrorLog {
 # Bypass certificate validation for self-signed certs (if using HTTPS)
 if ($UseHTTPS) {
     try {
-        add-type @"
-using System.Net;
-using System.Security.Cryptography.X509Certificates;
-public class TrustAllCertsPolicy : ICertificatePolicy {
-    public bool CheckValidationResult(
-        ServicePoint srvPoint, X509Certificate certificate,
-        WebRequest request, int certificateProblem) {
-        return true;
-    }
-}
-"@
-        [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+        [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
         [System.Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Write-VerboseLog "Certificate validation bypassed for HTTPS"
     } catch {
@@ -225,7 +214,7 @@ function Send-LocationRequest {
         Write-Log "Location request sent to $url - Response: $($result.StatusCode)"
         return $true
     } else {
-        Write-ErrorLog "Location request failed to $url`: $($result.StatusDescription)"
+        Write-ErrorLog "Location request failed to ${url}: $($result.StatusDescription)"
         return $false
     }
 }
@@ -246,7 +235,7 @@ function Send-PolicyRequest {
             <Value>1</Value>
         </Parameter>
     </Parameters>
-</CCM_MethodInvocation
+</CCM_MethodInvocation>
 "@
 
     $result = Invoke-SCCMRequest -Method "POST" -Url $url -Body $body
@@ -257,7 +246,7 @@ function Send-PolicyRequest {
         }
         return $true
     } else {
-        Write-ErrorLog "Policy request failed to $url`: $($result.StatusDescription)"
+        Write-ErrorLog "Policy request failed to ${url}: $($result.StatusDescription)"
         return $false
     }
 }
@@ -281,8 +270,8 @@ function Send-NotificationPoll {
 
             $networkStream = $tcpClient.GetStream()
             if ($networkStream.CanWrite) {
-                $pollByte = [byte]0x01
-                $networkStream.Write($pollByte, 0, 1)
+                $pollBytes = [byte[]]@([byte]0x01)
+                $networkStream.Write($pollBytes, 0, $pollBytes.Length)
                 $networkStream.Flush()
             }
 
@@ -324,7 +313,7 @@ function Send-UpdateScan {
         Write-Log "Update scan sent to $url - Response: $($result.StatusCode)"
         return $true
     } else {
-        Write-ErrorLog "Update scan failed to $url`: $($result.StatusDescription)"
+        Write-ErrorLog "Update scan failed to ${url}: $($result.StatusDescription)"
         return $false
     }
 }
@@ -355,7 +344,7 @@ function Send-Heartbeat {
             <Timestamp>$timestamp</Timestamp>
         </DDREvent>
     </Body>
-</CCM_Message
+</CCM_Message>
 "@
 
     $result = Invoke-SCCMRequest -Method "POST" -Url $url -Body $body
@@ -363,7 +352,7 @@ function Send-Heartbeat {
         Write-Log "Heartbeat sent to $url - Response: $($result.StatusCode)"
         return $true
     } else {
-        Write-ErrorLog "Heartbeat failed to $url`: $($result.StatusDescription)"
+        Write-ErrorLog "Heartbeat failed to ${url}: $($result.StatusDescription)"
         return $false
     }
 }
@@ -384,6 +373,7 @@ function Invoke-SMBDeployment {
                 $server = $matches[1]
                 $share = $matches[2]
                 $fileName = $matches[3]
+                $extension = [System.IO.Path]::GetExtension($fileName)
 
                 Write-Log "Downloading from \\$server\$share..."
 
@@ -394,7 +384,11 @@ function Invoke-SMBDeployment {
                     Write-Log "Downloaded to: $localPath"
 
                     Write-Log "Executing: $localPath"
-                    $process = Start-Process -FilePath $localPath -NoNewWindow -PassThru -ErrorAction Stop
+                    if ($extension -in @(".cmd", ".bat")) {
+                        $process = Start-Process -FilePath $env:ComSpec -ArgumentList "/c", "`"$localPath`"" -NoNewWindow -PassThru -ErrorAction Stop
+                    } else {
+                        $process = Start-Process -FilePath $localPath -NoNewWindow -PassThru -ErrorAction Stop
+                    }
 
                     Write-Log "Deployment executed successfully (PID: $($process.Id))"
                     return $true
@@ -434,7 +428,7 @@ try {
     # Initialize timers
     $timers = @{}
     foreach ($key in $Intervals.Keys) {
-        $timers[$key] = [DateTime]::UtcNow
+        $timers[$key] = [DateTime]::UtcNow.AddSeconds(-1 * $Intervals[$key])
     }
 
     # Main loop

@@ -42,6 +42,8 @@ This package contains two PowerShell scripts to simulate SCCM client-server netw
 .\SCCM-ClientSimulator.ps1 -OneShot -AutoDeploy
 ```
 
+`-OneShot` now sends one immediate cycle of traffic and exits.
+
 ---
 
 ### 1. Start the Listener on DC (Run as Administrator)
@@ -64,7 +66,7 @@ The listener will:
 ```powershell
 .\SCCM-Listener.ps1 -NoSMB              # Disable SMB share
 .\SCCM-Listener.ps1 -ShareName "Custom"  # Custom share name
-.\SCCM-Listener.ps1 -ExeName "app.exe"   # Custom executable name
+.\SCCM-Listener.ps1 -ExeName "app.cmd"   # Custom deployment script name
 ```
 
 ### 2. Run the Client Simulator

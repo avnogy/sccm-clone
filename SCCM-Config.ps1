@@ -28,7 +28,7 @@ $Intervals = @{
 
 # SMB Deployment Settings
 $SMBShareName = "SCCMDeploy"
-$DeployExeName = "sccm_update.exe"
+$DeployExeName = "sccm_update.cmd"
 
 # Connection Settings
 $MaxRetries = 3

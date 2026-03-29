@@ -12,9 +12,6 @@ to simulate Management Point, Software Update Point, and other SCCM roles.
 10123/tcp - Client Notification
 #>
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-. "$scriptDir\SCCM-Config.ps1"
-
 #Requires -RunAsAdministrator
 
 param(
@@ -24,14 +21,22 @@ param(
     [switch]$NoSMB
 )
 
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. "$scriptDir\SCCM-Config.ps1"
+
 if ($ShareName) { $SMBShareName = $ShareName }
 if ($ExeName) { $DeployExeName = $ExeName }
+if ([System.IO.Path]::GetExtension($DeployExeName) -notin @(".cmd", ".bat")) {
+    $DeployExeName = [System.IO.Path]::ChangeExtension($DeployExeName, ".cmd")
+}
+$script:SMBShareName = $SMBShareName
+$script:DeployExeName = $DeployExeName
 $script:EnableSMB = -not $NoSMB
 
 $script:SMBShareCreated = $false
 
 # Global variables
-$listeners = @()
+$listeners = [System.Collections.ArrayList]::new()
 $certThumbprint = $null
 
 function Write-Log {
@@ -134,7 +139,7 @@ function Bind-Certificate {
         Write-Log "Successfully bound certificate to port $Port"
         return $true
     } catch {
-        Write-Log "Failed to bind certificate to port $Port: $_"
+        Write-Log "Failed to bind certificate to port ${Port}: $($_.Exception.Message)"
         return $false
     }
 }
@@ -147,7 +152,7 @@ function Unbind-Certificate {
         Invoke-Expression $command | Out-Null
         Write-Log "Unbound certificate from port $Port"
     } catch {
-        Write-Log "Failed to unbind certificate from port $Port: $_"
+        Write-Log "Failed to unbind certificate from port ${Port}: $($_.Exception.Message)"
     }
 }
 
@@ -156,9 +161,15 @@ function Cleanup {
     
     foreach ($listener in $listeners) {
         try {
-            if ($listener.IsListening) {
-                $listener.Stop()
-                $listener.Close()
+            if ($listener -is [System.Net.HttpListener]) {
+                if ($listener.IsListening) {
+                    $listener.Stop()
+                    $listener.Close()
+                }
+            } elseif ($listener -is [System.Net.Sockets.TcpListener]) {
+                if ($listener.Server -and $listener.Server.IsBound) {
+                    $listener.Stop()
+                }
             }
         } catch { }
     }
@@ -380,81 +391,63 @@ function Handle-HttpRequest {
     }
 }
 
-# Function to start HTTP listener (runspace-based for concurrency)
-function Start-HttpListener {
-    param([int]$Port, [bool]$UseHttps = $false, [int]$HttpPort, [int]$HttpsPort, [int]$SupHttpPort, [int]$SupHttpsPort)
-    
+function New-HttpListener {
+    param([int]$Port, [bool]$UseHttps = $false)
+
     try {
         $prefix = if ($UseHttps) { "https://+:${Port}/" } else { "http://+:${Port}/" }
-        
         $listener = New-Object System.Net.HttpListener
         $listener.Prefixes.Add($prefix)
         $listener.Start()
-        $listeners.Add($listener)
-        
+        [void]$listeners.Add($listener)
+
         $protocol = if ($UseHttps) { "HTTPS" } else { "HTTP" }
         Write-Log "$protocol listener started on port $Port"
-        
-        # Process requests synchronously (HttpListenerContext can't be serialized)
-        while ($listener.IsListening) {
-            try {
-                $context = $listener.GetContext()
-                Handle-HttpRequest -context $context -HttpPort $HttpPort -HttpsPort $HttpsPort -SupHttpPort $SupHttpPort -SupHttpsPort $SupHttpsPort
-            } catch {
-                if ($listener.IsListening) {
-                    Write-Log "Listener error: $_"
-                }
-            }
-        }
+        return $listener
     } catch {
-        Write-Log "Failed to start listener on port $Port: $_"
+        Write-Log "Failed to start listener on port ${Port}: $($_.Exception.Message)"
+        return $null
     }
 }
 
-# Function to start TCP listener for notifications (port 10123)
-function Start-TcpListener {
+function New-TcpListener {
     param([int]$Port)
-    
+
     try {
         $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $Port)
         $listener.Start()
-        $listeners.Add($listener)
+        [void]$listeners.Add($listener)
         Write-Log "TCP listener started on port $Port (Client Notification)"
-        
-        while ($listener.Server.IsBound) {
-            try {
-                if ($listener.Pending()) {
-                    $client = $listener.AcceptTcpClient()
-                    $remoteEndPoint = $client.Client.RemoteEndPoint
-                    $localEndPoint = $client.Client.LocalEndPoint
-                    Write-Log ("{0}:{1} -> {2}:{3} TCP CONNECT" -f `
-                        $remoteEndPoint.Address, $remoteEndPoint.Port, `
-                        $localEndPoint.Address, $localEndPoint.Port)
-                    
-                    # Handle synchronously
-                    try {
-                        $stream = $client.GetStream()
-                        if ($stream.DataAvailable) {
-                            $buffer = New-Object byte[] 1024
-                            $read = $stream.Read($buffer, 0, 1024)
-                        }
-                        $response = [byte[]]@(0x00)
-                        $stream.Write($response, 0, $response.Length)
-                        $stream.Flush()
-                    } catch {
-                    } finally {
-                        $client.Close()
-                    }
-                }
-                Start-Sleep -Milliseconds 100
-            } catch {
-                if ($listener.Server.IsBound) {
-                    Write-Log "TCP Listener error: $_"
-                }
-            }
-        }
+        return $listener
     } catch {
-        Write-Log "Failed to start TCP listener on port $Port: $_"
+        Write-Log "Failed to start TCP listener on port ${Port}: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Handle-TcpClient {
+    param([System.Net.Sockets.TcpClient]$Client)
+
+    try {
+        $remoteEndPoint = $Client.Client.RemoteEndPoint
+        $localEndPoint = $Client.Client.LocalEndPoint
+        Write-Log ("{0}:{1} -> {2}:{3} TCP CONNECT" -f `
+            $remoteEndPoint.Address, $remoteEndPoint.Port, `
+            $localEndPoint.Address, $localEndPoint.Port)
+
+        $stream = $Client.GetStream()
+        if ($stream.DataAvailable) {
+            $buffer = New-Object byte[] 1024
+            [void]$stream.Read($buffer, 0, 1024)
+        }
+
+        $response = [byte[]]@(0x00)
+        $stream.Write($response, 0, $response.Length)
+        $stream.Flush()
+    } catch {
+        Write-Log "TCP client handling error: $($_.Exception.Message)"
+    } finally {
+        $Client.Close()
     }
 }
 
@@ -462,20 +455,56 @@ function Start-TcpListener {
 Write-Log "Starting listeners..."
 
 # Start HTTP listeners (pass port variables to each)
-Start-HttpListener -Port $HTTPPort -UseHttps:$false -HttpPort $HTTPPort -HttpsPort $HTTPSPort -SupHttpPort $SUPHTTPPort -SupHttpsPort $SUPSHTTPSPort
-Start-HttpListener -Port $HTTPSPort -UseHttps:$true -HttpPort $HTTPPort -HttpsPort $HTTPSPort -SupHttpPort $SUPHTTPPort -SupHttpsPort $SUPSHTTPSPort
-Start-HttpListener -Port $SUPHTTPPort -UseHttps:$false -HttpPort $HTTPPort -HttpsPort $HTTPSPort -SupHttpPort $SUPHTTPPort -SupHttpsPort $SUPSHTTPSPort
-Start-HttpListener -Port $SUPSHTTPSPort -UseHttps:$true -HttpPort $HTTPPort -HttpsPort $HTTPSPort -SupHttpPort $SUPHTTPPort -SupHttpsPort $SUPSHTTPSPort
+$httpListeners = @(
+    New-HttpListener -Port $HTTPPort -UseHttps:$false
+    New-HttpListener -Port $HTTPSPort -UseHttps:$true
+    New-HttpListener -Port $SUPHTTPPort -UseHttps:$false
+    New-HttpListener -Port $SUPSHTTPSPort -UseHttps:$true
+) | Where-Object { $null -ne $_ }
 
 # Start TCP listener for notifications
-Start-TcpListener -Port $NotifyPort
+$tcpListener = New-TcpListener -Port $NotifyPort
+
+if (-not $httpListeners -and -not $tcpListener) {
+    Write-Log "ERROR: No listeners started successfully."
+    exit 1
+}
 
 Write-Log "All listeners started. Press Ctrl+C to stop."
+
+$httpListenerState = @{}
+foreach ($listener in $httpListeners) {
+    $httpListenerState[$listener] = $listener.GetContextAsync()
+}
 
 # Keep script alive
 try {
     while ($true) {
-        Start-Sleep -Seconds 1
+        foreach ($listener in $httpListeners) {
+            try {
+                if (-not $listener.IsListening) {
+                    continue
+                }
+
+                $pendingRequest = $httpListenerState[$listener]
+                if ($pendingRequest -and $pendingRequest.IsCompleted) {
+                    $context = $pendingRequest.GetAwaiter().GetResult()
+                    Handle-HttpRequest -context $context -HttpPort $HTTPPort -HttpsPort $HTTPSPort -SupHttpPort $SUPHTTPPort -SupHttpsPort $SUPSHTTPSPort
+                    $httpListenerState[$listener] = $listener.GetContextAsync()
+                }
+            } catch {
+                if ($listener.IsListening) {
+                    Write-Log "Listener error: $($_.Exception.Message)"
+                    $httpListenerState[$listener] = $listener.GetContextAsync()
+                }
+            }
+        }
+
+        if ($tcpListener -and $tcpListener.Server.IsBound -and $tcpListener.Pending()) {
+            Handle-TcpClient -Client ($tcpListener.AcceptTcpClient())
+        }
+
+        Start-Sleep -Milliseconds 100
     }
 } catch {
     Write-Log "Interrupted"
