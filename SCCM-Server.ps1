@@ -127,6 +127,12 @@ function Get-LocalSysvolPolicyPath {
     return (Join-Path $env:SystemRoot "SYSVOL\sysvol\$DomainDnsRoot\Policies\$policyFolderName")
 }
 
+function Get-LocalSysvolScriptsPath {
+    param([string]$DomainDnsRoot)
+
+    return (Join-Path $env:SystemRoot "SYSVOL\sysvol\$DomainDnsRoot\scripts")
+}
+
 function Update-GptVersion {
     param([string]$GptPath)
 
@@ -191,8 +197,10 @@ function Publish-ClientStartupDeployment {
         }
 
         $policyPath = Get-LocalSysvolPolicyPath -DomainDnsRoot $domain.DNSRoot -GpoId $gpo.Id
+        $domainScriptsPath = Get-LocalSysvolScriptsPath -DomainDnsRoot $domain.DNSRoot
         $machineScriptsPath = Join-Path $policyPath "Machine\Scripts"
         $startupPath = Join-Path $machineScriptsPath "Startup"
+        New-Item -ItemType Directory -Path $domainScriptsPath -Force | Out-Null
         New-Item -ItemType Directory -Path $startupPath -Force | Out-Null
 
         $startupCmdName = "SCCM-Client-Startup.cmd"
@@ -202,6 +210,8 @@ function Publish-ClientStartupDeployment {
 
         Copy-Item -Path $script:ClientSourcePath -Destination (Join-Path $startupPath $clientScriptName) -Force
         Copy-Item -Path $script:ConfigSourcePath -Destination (Join-Path $startupPath $configScriptName) -Force
+        Copy-Item -Path $script:ClientSourcePath -Destination (Join-Path $domainScriptsPath $clientScriptName) -Force
+        Copy-Item -Path $script:ConfigSourcePath -Destination (Join-Path $domainScriptsPath $configScriptName) -Force
 
         $useHttpsLiteral = if ($UseHTTPS) { '$true' } else { '$false' }
         $launcherContent = @'
@@ -246,12 +256,14 @@ Start-Process -FilePath "powershell.exe" -ArgumentList $argumentList -WindowStyl
         $launcherContent = $launcherContent.Replace("__SERVER_HOST__", $script:PolicyHost.Replace('"', '""'))
         $launcherContent = $launcherContent.Replace("__USE_HTTPS__", $useHttpsLiteral)
         Set-Content -Path (Join-Path $startupPath $launcherPs1Name) -Value $launcherContent -Encoding UTF8
+        Set-Content -Path (Join-Path $domainScriptsPath $launcherPs1Name) -Value $launcherContent -Encoding UTF8
 
         $startupCmdContent = @"
 @echo off
 start "" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0$launcherPs1Name"
 "@
         Set-Content -Path (Join-Path $startupPath $startupCmdName) -Value $startupCmdContent -Encoding ASCII
+        Set-Content -Path (Join-Path $domainScriptsPath $startupCmdName) -Value $startupCmdContent -Encoding ASCII
 
         $scriptsIniContent = @"
 [Startup]
@@ -267,6 +279,7 @@ start "" /min powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0$lau
         Update-GptVersion -GptPath (Join-Path $policyPath "GPT.ini")
 
         Write-Log "Published latest client startup deployment to: $startupPath"
+        Write-Log "Published client copies to domain scripts path: $domainScriptsPath"
     } catch {
         Write-Log "Client deployment update failed: $($_.Exception.Message)"
     }
