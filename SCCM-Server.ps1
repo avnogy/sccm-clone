@@ -18,7 +18,6 @@ param(
     [string]$SMBSharePath = "",
     [string]$ShareName = "",
     [string]$ExeName = "",
-    [string]$PolicyHost = "",
     [string]$ClientStartupGpoName = "SCCM Simulator Client Startup",
     [string]$ClientInstallRoot = "C:\ProgramData\SCCMSim",
     [switch]$ServeSMBPolicy
@@ -30,7 +29,6 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ($ShareName) { $SMBShareName = $ShareName }
 if ($ExeName) { $DeployExeName = $ExeName }
 if (-not $SMBSharePath) { $SMBSharePath = $DefaultSMBSharePath }
-if (-not $PolicyHost) { $PolicyHost = $SMBPolicyHost }
 if ([System.IO.Path]::GetExtension($DeployExeName) -notin @(".cmd", ".bat")) {
     $DeployExeName = [System.IO.Path]::ChangeExtension($DeployExeName, ".cmd")
 }
@@ -447,7 +445,10 @@ trap {
 Write-Log "Starting SCCM Listener..."
 Write-UpdateMarker
 
-$script:PolicyHost = if ($PolicyHost) { $PolicyHost } else { Get-ListenerIPv4 }
+$script:PolicyHost = $SMBPolicyHost
+if (-not $script:PolicyHost) {
+    $script:PolicyHost = Get-ListenerIPv4
+}
 if (-not $script:PolicyHost) {
     $script:PolicyHost = $env:COMPUTERNAME
     Write-Log "Policy host fallback is computer name: $script:PolicyHost"

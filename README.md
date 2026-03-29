@@ -117,8 +117,6 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\SCCM-Server.ps1 -ServeSMBPolicy
 
 # Or, if you want the policy to advertise a specific IP:
-# .\SCCM-Server.ps1 -ServeSMBPolicy -PolicyHost "192.168.1.10"
-
 # On each client
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\SCCM-Client.ps1 -ServerHost 192.168.1.10
@@ -154,7 +152,6 @@ What happens:
 .\SCCM-Server.ps1 -ShareName "CustomShare"
 .\SCCM-Server.ps1 -SMBSharePath "C:\Temp\SCCMDeploy"
 .\SCCM-Server.ps1 -ExeName "update.cmd"
-.\SCCM-Server.ps1 -ServeSMBPolicy -PolicyHost "192.168.1.10"
 .\SCCM-Server.ps1 -ClientStartupGpoName "SCCM Simulator Client Startup"
 .\SCCM-Server.ps1 -ClientInstallRoot "C:\ProgramData\SCCMSim"
 ```
@@ -163,7 +160,7 @@ Notes:
 
 - `-ServeSMBPolicy` enables the stage-2 behavior: the listener creates the SMB share and sends one deployment policy per client from `/ccm_system/request`.
 - `-ExeName` is normalized to a `.cmd` script if another extension is supplied.
-- `-PolicyHost` overrides `SMBPolicyHost` from the config and controls the host part placed in the policy `CommandLine` UNC path. If neither is set, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
+- `SMBPolicyHost` in `SCCM-Config.ps1` controls the host part placed in the policy `CommandLine` UNC path. If it is blank, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
 - `-ClientStartupGpoName` controls the dedicated computer-startup GPO that the server refreshes each run.
 - `-ClientInstallRoot` controls where the startup script copies the client locally on each machine before launching it.
 - The generated deployment file is a simple command script that appends to `C:\sccm_deployed.log`.
@@ -215,7 +212,7 @@ Current defaults from `SCCM-Config.ps1`:
 - heartbeat interval: `120` seconds
 - deployment share path: `C:\SCCMDeploy`
 - deployment share name: `SCCMDeploy`
-- deployment policy host: auto-detect unless `SMBPolicyHost` is set
+- deployment policy host: `SMBPolicyHost` from config, otherwise auto-detect
 - deployment file name: `sccm_update.cmd`
 - generated deployment file size: `64` KB
 - padded location response entries: `8`
