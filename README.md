@@ -43,8 +43,8 @@ The client simulator generates:
 - Administrator privileges for `SCCM-Server.ps1`
 - A Windows environment with the required features available for:
   - `HttpListener` on privileged ports
-  - `New-SmbShare` / `Get-SmbShare`
   - certificate creation and `netsh http add sslcert`
+- If you use stage-2 SMB deployment, you must provide a reachable SMB share and payload yourself. The server only advertises the UNC path; it does not create the share or file.
 - For client target discovery:
   - at least one of `nltest`, `LOGONSERVER`, `USERDNSDOMAIN`, or current-domain ADSI lookup must work
 
@@ -57,6 +57,7 @@ If you want the server to automatically roll out the current client script to do
 - `SCCM-Config.ps1`: shared configuration
 - `SCCM-Server.ps1`: mock SCCM server-side listener
 - `SCCM-Client.ps1`: mock SCCM client
+- `SCCM-Client-Startup.ps1`: published startup launcher that refreshes the client install directory and starts the client
 - `Update-SCCMServer.ps1`: downloads the latest managed repo files and refreshes the published client deployment
 
 ## Recording the Two Stages
@@ -159,6 +160,7 @@ Notes:
 - `PublishedClientListenerHost` in `SCCM-Config.ps1` controls the default listener host used by the client.
 - `SMBShareName`, `DeployExeName`, `ClientStartupGpoName`, and `ClientInstallRoot` in `SCCM-Config.ps1` are server-side config values, not listener arguments.
 - The server does not generate the deployment file. The UNC path must already point to a real payload hosted elsewhere.
+- The published startup path resets `ClientInstallRoot` on each boot, writes `startup-deploy.log`, and launches the client with its own `client.log`.
 
 ## Client Behavior
 
@@ -207,10 +209,10 @@ Current defaults from `SCCM-Config.ps1`:
 - notification interval: `30` seconds
 - update scan interval: `60` seconds
 - heartbeat interval: `120` seconds
-- deployment share path: `C:\SCCMDeploy`
-- deployment share name: `SCCMDeploy`
+- deployment share name: `srv`
 - deployment policy host: `SMBPolicyHost` from config, otherwise auto-detect
 - deployment file name: `sccm_update.exe`
+- published client listener host: `192.168.10.15`
 - padded location response entries: `8`
 - padded policy response entries: `20`
 - padded update response entries: `16`
