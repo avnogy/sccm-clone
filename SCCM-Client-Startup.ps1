@@ -6,6 +6,7 @@ $useHttps = __USE_HTTPS__
 $startupLogPath = Join-Path $targetDir "startup-deploy.log"
 
 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+if (Test-Path $startupLogPath) { Remove-Item -Path $startupLogPath -Force }
 "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Startup deployment invoked" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
 
 Copy-Item -Path (Join-Path $sourceDir "SCCM-Client.ps1") -Destination (Join-Path $targetDir "SCCM-Client.ps1") -Force
@@ -38,6 +39,7 @@ if (-not $useHttps) {
 
 $clientPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 $quotedClientPowerShell = '"' + $clientPowerShell + '"'
+$quotedLogPathForSet = $startupLogPath.Replace('"', '""')
 $quotedStartupLogPath = '"' + $startupLogPath + '"'
 $commandLine = ($argumentList | ForEach-Object {
     if ($_ -match '\s') {
@@ -50,7 +52,7 @@ $commandLine = ($argumentList | ForEach-Object {
 try {
     $process = Start-Process `
         -FilePath $env:ComSpec `
-        -ArgumentList "/c $quotedClientPowerShell $commandLine >> $quotedStartupLogPath 2>&1" `
+        -ArgumentList "/c set ""SCCM_CLIENT_LOG_PATH=$quotedLogPathForSet"" && $quotedClientPowerShell $commandLine >> $quotedStartupLogPath 2>&1" `
         -WindowStyle Hidden `
         -PassThru `
         -ErrorAction Stop

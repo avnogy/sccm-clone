@@ -20,6 +20,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $PSBoundParameters.ContainsKey('UseHTTPS')) { $UseHTTPS = $true }
 
 $script:LogEnabled = $true
+$script:LogFilePath = $env:SCCM_CLIENT_LOG_PATH
 $script:LastDeploymentCommandLine = $null
 
 function Get-FileSha256 {
@@ -47,7 +48,11 @@ function Write-Log {
     if ($script:LogEnabled) {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         $threadId = [System.Threading.Thread]::CurrentThread.ManagedThreadId
-        Write-Host "[$timestamp] [$level] TID:${threadId} - $message"
+        $entry = "[$timestamp] [$level] TID:${threadId} - $message"
+        Write-Host $entry
+        if ($script:LogFilePath) {
+            $entry | Out-File -FilePath $script:LogFilePath -Append -Encoding ASCII
+        }
     }
 }
 
