@@ -2,7 +2,7 @@
 .SYNOPSIS
 SCCM Client Simulator - Generates realistic SCCM client network traffic
 .DESCRIPTION
-This script discovers or targets a listener host and generates SCCM-like traffic patterns
+This script uses a configured listener host and generates SCCM-like traffic patterns
 including location requests, policy requests, notification polls, update scans, and heartbeats.
 .USAGE
     .\SCCM-Client.ps1
@@ -10,14 +10,10 @@ including location requests, policy requests, notification polls, update scans, 
 #>
 
 [CmdletBinding()]
-param(
-    [switch]$UseHTTPS
-)
+param()
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . "$scriptDir\SCCM-Config.ps1"
-
-if (-not $PSBoundParameters.ContainsKey('UseHTTPS')) { $UseHTTPS = $true }
 
 $script:LogEnabled = $true
 $script:LogFilePath = $env:SCCM_CLIENT_LOG_PATH
@@ -79,74 +75,14 @@ if ($UseHTTPS) {
     }
 }
 
-# Listener host discovery functions
-function Find-ListenerHost {
-    if ($PublishedClientListenerHost) {
-        Write-Log "Using listener host from config: $PublishedClientListenerHost"
-        return $PublishedClientListenerHost
+# Listener host selection
+function Get-ListenerHost {
+    if ($ListenerHost) {
+        Write-Log "Using listener host from config: $ListenerHost"
+        return $ListenerHost
     }
 
-    Write-Log "Discovering listener host..."
-
-    # Method 1: nltest /dsgetdc (most reliable)
-    try {
-        Write-VerboseLog "Trying nltest /dsgetdc..."
-        $nltestOutput = nltest /dsgetdc 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            if ($nltestOutput -match "DC:\\\\\\([^\\\s]+)") {
-                $dc = $matches[1].TrimEnd('\')
-                Write-Log "Discovered listener host via nltest: $dc"
-                return $dc
-            }
-        }
-    } catch {
-        Write-VerboseLog "nltest failed: $_"
-    }
-
-    # Method 2: DNS SRV record for SCCM
-    try {
-        Write-VerboseLog "Trying DNS SRV query for _sccm-proxy._tcp..."
-        $domain = $env:USERDNSDOMAIN
-        if ($domain) {
-            $srvQuery = "_sccm-proxy._tcp.$domain"
-            Write-VerboseLog "Querying SRV record: $srvQuery"
-            $srvRecords = Resolve-DnsName -Type SRV -Name $srvQuery -ErrorAction Stop 2>$null
-            if ($srvRecords) {
-                $sorted = $srvRecords | Sort-Object Priority, Weight -Descending
-                $dc = $sorted[0].NameTarget.TrimEnd('.')
-                Write-Log "Discovered listener host via SRV record ($srvQuery): $dc"
-                return $dc
-            }
-        }
-    } catch {
-        Write-VerboseLog "DNS SRV query failed: $_"
-    }
-
-    # Method 3: Environment variable (LOGONSERVER)
-    try {
-        if ($env:LOGONSERVER) {
-            $dc = $env:LOGONSERVER -Replace '^\\\\', ''
-            Write-Log "Discovered listener host via LOGONSERVER: $dc"
-            return $dc
-        }
-    } catch {
-        Write-VerboseLog "LOGONSERVER check failed: $_"
-    }
-
-    # Method 4: Current domain via ADSI (fallback)
-    try {
-        Write-VerboseLog "Trying ADSI domain lookup..."
-        $domain = [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain()
-        if ($domain) {
-            $dc = ($domain.DomainControllers | Select-Object -First 1).Name
-            Write-Log "Discovered listener host via ADSI: $dc"
-            return $dc
-        }
-    } catch {
-        Write-VerboseLog "ADSI lookup failed: $_"
-    }
-
-    Write-Log "ERROR: Could not discover listener host using any method" "ERROR"
+    Write-Log "ERROR: ListenerHost is not configured in SCCM-Config.ps1" "ERROR"
     return $null
 }
 
@@ -297,10 +233,6 @@ function Invoke-ClientSelfUpdate {
             "-ExecutionPolicy", "Bypass",
             "-File", $localClientPath
         )
-
-        if (-not $UseHTTPS) {
-            $argumentList += "-UseHTTPS:`$false"
-        }
 
         $clientPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
         Start-Process -FilePath $clientPowerShell -ArgumentList $argumentList -WindowStyle Hidden -ErrorAction Stop
@@ -553,8 +485,8 @@ try {
     Write-Log "Starting SCCM Client Simulator..."
     Write-Log "Using HTTPS: $UseHTTPS"
 
-    # Discover or use configured listener host
-    $listenerHost = Find-ListenerHost
+    # Use configured listener host
+    $listenerHost = Get-ListenerHost
     if (-not $listenerHost) {
         Write-Log "FATAL: Could not determine listener host. Exiting." "ERROR"
         exit 1

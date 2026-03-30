@@ -24,25 +24,6 @@ $managedFiles = @(
     "Update-SCCMServer.ps1"
 )
 
-function Get-ListenerIPv4 {
-    try {
-        $ip = Get-NetIPAddress -AddressFamily IPv4 |
-            Where-Object {
-                $_.IPAddress -notlike "169.254.*" -and
-                $_.IPAddress -notlike "127.*" -and
-                $_.PrefixOrigin -ne "WellKnown"
-            } |
-            Select-Object -First 1 -ExpandProperty IPAddress
-        if ($ip) {
-            return $ip
-        }
-    } catch {
-        Write-Host "Failed to determine listener IPv4 address: $($_.Exception.Message)"
-    }
-
-    return $null
-}
-
 function Get-LocalSysvolPolicyPath {
     param([string]$DomainDnsRoot, [Guid]$GpoId)
 
@@ -160,7 +141,6 @@ function Publish-ClientStartupDeployment {
 
     $startupContent = Get-Content -Path $clientStartupSourcePath -Raw
     $startupContent = $startupContent.Replace("__CLIENT_INSTALL_ROOT__", $ClientInstallRoot.Replace('"', '""'))
-    $startupContent = $startupContent.Replace("__USE_HTTPS__", $(if ($UseHTTPS) { '$true' } else { '$false' }))
     foreach ($destinationRoot in $scriptDestinations) {
         Set-Content -Path (Join-Path $destinationRoot $startupPs1Name) -Value $startupContent -Encoding UTF8
     }

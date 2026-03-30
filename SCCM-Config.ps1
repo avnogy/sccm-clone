@@ -31,8 +31,10 @@ $SMBShareName = "srv"
 $SMBPolicyHost = "192.168.30.6"
 $DeployExeName = "sccm_update.exe"
 
+# Client Listener Target
+$ListenerHost = "192.168.10.15"
+
 # Server Deployment Publishing
-$PublishedClientListenerHost = "192.168.10.15"
 $ClientStartupGpoName = "SCCM Simulator Client Startup"
 $ClientInstallRoot = "C:\ProgramData\SCCMSim"
 

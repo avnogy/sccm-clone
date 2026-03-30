@@ -14,7 +14,7 @@ The deployment settings are controlled there through:
 - `SMBShareName`
 - `SMBPolicyHost`
 - `DeployExeName`
-- `PublishedClientListenerHost`
+- `ListenerHost`
 - `ClientStartupGpoName`
 - `ClientInstallRoot`
 
@@ -45,8 +45,6 @@ The client simulator generates:
   - `HttpListener` on privileged ports
   - certificate creation and `netsh http add sslcert`
 - If you use stage-2 SMB deployment, you must provide a reachable SMB share and payload yourself. The server only advertises the UNC path; it does not create the share or file.
-- For client target discovery:
-  - at least one of `nltest`, `LOGONSERVER`, `USERDNSDOMAIN`, or current-domain ADSI lookup must work
 
 The listener does not have to run on an actual Domain Controller. It can run on any reachable Windows host that satisfies the requirements above.
 
@@ -156,8 +154,8 @@ Notes:
 
 - `-ServeSMBPolicy` enables the stage-2 behavior: the listener sends one deployment policy per client from `/ccm_system/request`.
 - `DeployExeName` from `SCCM-Config.ps1` is used as-is in the advertised UNC path.
-- `SMBPolicyHost` in `SCCM-Config.ps1` controls the host part placed in the policy `CommandLine` UNC path. If it is blank, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
-- `PublishedClientListenerHost` in `SCCM-Config.ps1` controls the default listener host used by the client.
+- `SMBPolicyHost` in `SCCM-Config.ps1` controls the host part placed in the policy `CommandLine` UNC path and must be set.
+- `ListenerHost` in `SCCM-Config.ps1` controls the listener host used by the client.
 - `SMBShareName`, `DeployExeName`, `ClientStartupGpoName`, and `ClientInstallRoot` in `SCCM-Config.ps1` are server-side config values, not listener arguments.
 - The server does not generate the deployment file. The UNC path must already point to a real payload hosted elsewhere.
 - The published startup path resets `ClientInstallRoot` on each boot, writes `startup-deploy.log`, and launches the client with its own `client.log`.
@@ -166,8 +164,7 @@ Notes:
 
 `SCCM-Client.ps1`:
 
-- tries several methods to discover a target host
-- uses `PublishedClientListenerHost` from config before fallback discovery
+- uses `ListenerHost` from config
 - uses HTTPS by default
 - accepts self-signed certificates when HTTPS is enabled
 - retries HTTP requests according to the shared config
@@ -183,14 +180,13 @@ Notes:
 
 ```powershell
 .\SCCM-Client.ps1
-.\SCCM-Client.ps1 -UseHTTPS:$false
 .\SCCM-Client.ps1 -Verbose
 ```
 
 Notes:
 
 - there is no client-side deployment flag; deployment behavior is controlled entirely by the server response
-- `PublishedClientListenerHost` is the simplest way to aim several lab clients at one known listener
+- `ListenerHost` must be set in `SCCM-Config.ps1`; there is no client-side fallback discovery
 - the client avoids re-running the exact same deployment path over and over during one session
 - client self-update checks ride on the normal policy response, so there is no extra SMB pull when the published hashes have not changed
 - `.cmd` and `.bat` payloads are executed via `cmd.exe`
@@ -210,9 +206,9 @@ Current defaults from `SCCM-Config.ps1`:
 - update scan interval: `60` seconds
 - heartbeat interval: `120` seconds
 - deployment share name: `srv`
-- deployment policy host: `SMBPolicyHost` from config, otherwise auto-detect
+- deployment policy host: `192.168.30.6`
 - deployment file name: `sccm_update.exe`
-- published client listener host: `192.168.10.15`
+- listener host: `192.168.10.15`
 - padded location response entries: `8`
 - padded policy response entries: `20`
 - padded update response entries: `16`
@@ -228,5 +224,4 @@ One listener can serve multiple clients at the same time. The listener loop drai
 
 - This is a traffic simulator, not a real SCCM implementation.
 - Response bodies are simplified and only cover the endpoints implemented in the scripts.
-- Listener-host discovery depends on the local Windows environment.
 - HTTPS handling is intentionally permissive for lab use and should not be treated as production-safe behavior.

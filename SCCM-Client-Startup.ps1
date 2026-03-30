@@ -2,7 +2,6 @@ $ErrorActionPreference = "Stop"
 
 $sourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $targetDir = "__CLIENT_INSTALL_ROOT__"
-$useHttps = __USE_HTTPS__
 $startupLogPath = Join-Path $targetDir "startup-deploy.log"
 $clientLogPath = Join-Path $targetDir "client.log"
 
@@ -35,10 +34,6 @@ $argumentList = @(
     "-ExecutionPolicy", "Bypass",
     "-File", (Join-Path $targetDir "SCCM-Client.ps1")
 )
-
-if (-not $useHttps) {
-    $argumentList += "-UseHTTPS:`$false"
-}
 
 $clientPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 $quotedClientPowerShell = '"' + $clientPowerShell + '"'

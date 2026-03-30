@@ -73,25 +73,6 @@ function Write-UpdateMarker {
     }
 }
 
-function Get-ListenerIPv4 {
-    try {
-        $ip = Get-NetIPAddress -AddressFamily IPv4 |
-            Where-Object {
-                $_.IPAddress -notlike "169.254.*" -and
-                $_.IPAddress -notlike "127.*" -and
-                $_.PrefixOrigin -ne "WellKnown"
-            } |
-            Select-Object -First 1 -ExpandProperty IPAddress
-        if ($ip) {
-            return $ip
-        }
-    } catch {
-        Write-Log "Failed to determine listener IPv4 address: $($_.Exception.Message)"
-    }
-
-    return $null
-}
-
 function New-PaddedXmlEntries {
     param(
         [string]$ElementName,
@@ -248,13 +229,11 @@ Write-Log "Starting SCCM Listener..."
 Write-UpdateMarker
 
 $script:PolicyHost = $SMBPolicyHost
-if (-not $script:PolicyHost) {
-    $script:PolicyHost = Get-ListenerIPv4
-}
-if (-not $script:PolicyHost) {
-    $script:PolicyHost = $env:COMPUTERNAME
-    Write-Log "Policy host fallback is computer name: $script:PolicyHost"
-} else {
+if ($script:EnableSMB) {
+    if (-not $script:PolicyHost) {
+        throw "SMBPolicyHost is not configured in SCCM-Config.ps1"
+    }
+
     Write-Log "Policy host for deployment content: $script:PolicyHost"
 }
 
