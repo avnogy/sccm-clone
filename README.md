@@ -9,12 +9,14 @@ It has two roles:
 
 `SCCM-Config.ps1` contains the shared ports, intervals, retry settings, and deployment defaults used by both scripts.
 
-The default SMB deployment path is also controlled there through:
+The deployment settings are controlled there through:
 
 - `DefaultSMBSharePath`
 - `SMBShareName`
 - `SMBPolicyHost`
 - `DeployExeName`
+- `ClientStartupGpoName`
+- `ClientInstallRoot`
 
 ## What It Simulates
 
@@ -129,7 +131,7 @@ What happens:
 - the server sends that deployment policy once per client per server run
 - every client requests policy, recognizes the deployment path in the response, copies the file over SMB, and executes it
 - each client executes a given deployment path once per client process lifetime, which prevents the same payload from re-running every policy interval
-- the server refreshes the domain startup deployment so rebooted domain computers pick up the latest client version automatically
+- the update script refreshes the domain startup deployment so rebooted domain computers pick up the latest client version automatically
 
 ## Listener Behavior
 
@@ -140,7 +142,6 @@ What happens:
 - starts listeners on the configured HTTP, HTTPS, SUP, and notification ports
 - serves normal SCCM-like policy responses by default
 - sends one SMB deployment policy per client only when `-ServeSMBPolicy` is used
-- refreshes a dedicated domain computer-startup GPO on each run so the latest client script is published into SYSVOL
 - logs inbound requests and returns mock SCCM-style responses
 - cleans up listeners and certificate bindings on exit
 
@@ -149,22 +150,15 @@ What happens:
 ```powershell
 .\SCCM-Server.ps1
 .\SCCM-Server.ps1 -ServeSMBPolicy
-.\SCCM-Server.ps1 -ShareName "CustomShare"
-.\SCCM-Server.ps1 -SMBSharePath "C:\Temp\SCCMDeploy"
-.\SCCM-Server.ps1 -ExeName "update.cmd"
-.\SCCM-Server.ps1 -ClientStartupGpoName "SCCM Simulator Client Startup"
-.\SCCM-Server.ps1 -ClientInstallRoot "C:\ProgramData\SCCMSim"
 ```
 
 Notes:
 
 - `-ServeSMBPolicy` enables the stage-2 behavior: the listener sends one deployment policy per client from `/ccm_system/request`.
-- `-ExeName` is normalized to a `.cmd` script if another extension is supplied.
+- `DeployExeName` from `SCCM-Config.ps1` is normalized to a `.cmd` script if another extension is supplied.
 - `SMBPolicyHost` in `SCCM-Config.ps1` controls the host part placed in the policy `CommandLine` UNC path. If it is blank, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
-- `-ClientStartupGpoName` controls the dedicated computer-startup GPO that the server refreshes each run.
-- `-ClientInstallRoot` controls where the startup script copies the client locally on each machine before launching it.
+- `DefaultSMBSharePath`, `SMBShareName`, `DeployExeName`, `ClientStartupGpoName`, and `ClientInstallRoot` in `SCCM-Config.ps1` are server-side config values, not listener arguments.
 - The server does not generate the deployment file. The UNC path must already point to a real payload hosted elsewhere.
-- `-PublishClientOnly` refreshes the startup GPO/SYSVOL client deployment and exits without starting listeners.
 
 ## Client Behavior
 
