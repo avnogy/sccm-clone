@@ -136,7 +136,7 @@ function Get-DeploymentClientKey {
     return "UNKNOWN"
 }
 
-function Generate-SelfSignedCert {
+function New-SelfSignedListenerCertificate {
     param([string]$Subject = "CN=SCCM-Listener")
     
     Write-Log "Generating self-signed certificate for $Subject"
@@ -160,7 +160,7 @@ function Generate-SelfSignedCert {
     }
 }
 
-function Bind-Certificate {
+function Add-ListenerCertificateBinding {
     param([string]$Thumbprint, [int]$Port)
     
     try {
@@ -176,7 +176,7 @@ function Bind-Certificate {
     }
 }
 
-function Unbind-Certificate {
+function Remove-ListenerCertificateBinding {
     param([int]$Port)
     
     try {
@@ -207,8 +207,8 @@ function Cleanup {
     }
     
     if ($certThumbprint) {
-        Unbind-Certificate -Port $HTTPSPort
-        Unbind-Certificate -Port $SUPSHTTPSPort
+        Remove-ListenerCertificateBinding -Port $HTTPSPort
+        Remove-ListenerCertificateBinding -Port $SUPSHTTPSPort
     }
     
     Write-Log "Cleanup complete."
@@ -247,15 +247,15 @@ try {
         $certThumbprint = $existingCert.Thumbprint
         Write-Log "Using existing certificate: $certThumbprint"
     } else {
-        $certThumbprint = Generate-SelfSignedCert -Subject "CN=SCCM-Listener"
+        $certThumbprint = New-SelfSignedListenerCertificate -Subject "CN=SCCM-Listener"
         if (-not $certThumbprint) {
             Write-Log "ERROR: Failed to create certificate. HTTPS listeners will not work."
         }
     }
     
     if ($certThumbprint) {
-        Bind-Certificate -Thumbprint $certThumbprint -Port $HTTPSPort
-        Bind-Certificate -Thumbprint $certThumbprint -Port $SUPSHTTPSPort
+        Add-ListenerCertificateBinding -Thumbprint $certThumbprint -Port $HTTPSPort
+        Add-ListenerCertificateBinding -Thumbprint $certThumbprint -Port $SUPSHTTPSPort
     }
     
 } catch {
@@ -268,7 +268,7 @@ if ($script:EnableSMB) {
 }
 
 # Function to handle HTTP requests (synchronous)
-function Handle-HttpRequest {
+function Receive-HttpRequest {
     param(
         [System.Net.HttpListenerContext]$context,
         [int]$HttpPort,
@@ -492,7 +492,7 @@ function New-TcpListener {
     }
 }
 
-function Handle-TcpClient {
+function Receive-TcpClient {
     param([System.Net.Sockets.TcpClient]$Client)
 
     try {
@@ -561,7 +561,7 @@ try {
 
                     $context = $pendingRequest.GetAwaiter().GetResult()
                     $httpListenerState[$listener] = $listener.GetContextAsync()
-                    Handle-HttpRequest -context $context -HttpPort $HTTPPort -HttpsPort $HTTPSPort -SupHttpPort $SUPHTTPPort -SupHttpsPort $SUPSHTTPSPort
+                    Receive-HttpRequest -context $context -HttpPort $HTTPPort -HttpsPort $HTTPSPort -SupHttpPort $SUPHTTPPort -SupHttpsPort $SUPSHTTPSPort
                 }
             } catch {
                 if ($listener.IsListening) {
@@ -577,7 +577,7 @@ try {
                     break
                 }
 
-                Handle-TcpClient -Client ($tcpListener.AcceptTcpClient())
+                Receive-TcpClient -Client ($tcpListener.AcceptTcpClient())
             }
         }
 
