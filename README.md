@@ -11,7 +11,6 @@ It has two roles:
 
 The deployment settings are controlled there through:
 
-- `DefaultSMBSharePath`
 - `SMBShareName`
 - `SMBPolicyHost`
 - `DeployExeName`
@@ -157,7 +156,7 @@ Notes:
 - `-ServeSMBPolicy` enables the stage-2 behavior: the listener sends one deployment policy per client from `/ccm_system/request`.
 - `DeployExeName` from `SCCM-Config.ps1` is normalized to a `.cmd` script if another extension is supplied.
 - `SMBPolicyHost` in `SCCM-Config.ps1` controls the host part placed in the policy `CommandLine` UNC path. If it is blank, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
-- `DefaultSMBSharePath`, `SMBShareName`, `DeployExeName`, `ClientStartupGpoName`, and `ClientInstallRoot` in `SCCM-Config.ps1` are server-side config values, not listener arguments.
+- `SMBShareName`, `DeployExeName`, `ClientStartupGpoName`, and `ClientInstallRoot` in `SCCM-Config.ps1` are server-side config values, not listener arguments.
 - The server does not generate the deployment file. The UNC path must already point to a real payload hosted elsewhere.
 
 ## Client Behavior
