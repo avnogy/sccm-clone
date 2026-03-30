@@ -5,6 +5,8 @@ $targetDir = "__CLIENT_INSTALL_ROOT__"
 $serverHost = "__SERVER_HOST__"
 $useHttps = __USE_HTTPS__
 $startupLogPath = Join-Path $targetDir "startup-deploy.log"
+$clientStdOutPath = Join-Path $targetDir "client-stdout.log"
+$clientStdErrPath = Join-Path $targetDir "client-stderr.log"
 
 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
 "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Startup deployment invoked" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
@@ -39,5 +41,21 @@ if (-not $useHttps) {
 }
 
 $clientPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-Start-Process -FilePath $clientPowerShell -ArgumentList $argumentList -WindowStyle Hidden
-"[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Started SCCM client for server $serverHost" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
+if (Test-Path $clientStdOutPath) { Remove-Item -Path $clientStdOutPath -Force }
+if (Test-Path $clientStdErrPath) { Remove-Item -Path $clientStdErrPath -Force }
+
+try {
+    $process = Start-Process `
+        -FilePath $clientPowerShell `
+        -ArgumentList $argumentList `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $clientStdOutPath `
+        -RedirectStandardError $clientStdErrPath `
+        -PassThru `
+        -ErrorAction Stop
+
+    "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Started SCCM client for server $serverHost (PID: $($process.Id))" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
+} catch {
+    "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Failed to start SCCM client: $($_.Exception.Message)" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
+    throw
+}
