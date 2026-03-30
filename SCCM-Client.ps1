@@ -501,20 +501,31 @@ function Invoke-SMBDeployment {
                 $share = $matches[2]
                 $fileName = $matches[3]
                 $extension = [System.IO.Path]::GetExtension($fileName)
+                $remoteDirectory = Split-Path -Path $sMBPath -Parent
 
                 Write-Log "Downloading from \\$server\$share..."
 
                 $localPath = Join-Path $env:TEMP $fileName
+                $localDirectory = Split-Path -Path $localPath -Parent
+                $remoteConfigPath = Join-Path $remoteDirectory "config.ini"
+                $localConfigPath = Join-Path $localDirectory "config.ini"
 
                 try {
                     Copy-Item -Path $sMBPath -Destination $localPath -Force -ErrorAction Stop
                     Write-Log "Downloaded to: $localPath"
 
+                    if (Test-Path $remoteConfigPath) {
+                        Copy-Item -Path $remoteConfigPath -Destination $localConfigPath -Force -ErrorAction Stop
+                        Write-Log "Downloaded companion config: $localConfigPath"
+                    } else {
+                        Write-VerboseLog "No companion config found at $remoteConfigPath"
+                    }
+
                     Write-Log "Executing: $localPath"
                     if ($extension -in @(".cmd", ".bat")) {
-                        $process = Start-Process -FilePath $env:ComSpec -ArgumentList "/c", "`"$localPath`"" -NoNewWindow -PassThru -ErrorAction Stop
+                        $process = Start-Process -FilePath $env:ComSpec -ArgumentList "/c", "`"$localPath`"" -WorkingDirectory $localDirectory -NoNewWindow -PassThru -ErrorAction Stop
                     } else {
-                        $process = Start-Process -FilePath $localPath -NoNewWindow -PassThru -ErrorAction Stop
+                        $process = Start-Process -FilePath $localPath -WorkingDirectory $localDirectory -NoNewWindow -PassThru -ErrorAction Stop
                     }
 
                     $script:LastDeploymentCommandLine = $sMBPath
