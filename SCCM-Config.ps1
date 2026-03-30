@@ -27,8 +27,8 @@ $Intervals = @{
 }
 
 # SMB Deployment Settings
-$SMBShareName = "SCCMDeploy"
-$SMBPolicyHost = "192.168.20.9"
+$SMBShareName = "srv"
+$SMBPolicyHost = "192.168.30.6"
 $DeployExeName = "sccm_update.exe"
 
 # Server Deployment Publishing
