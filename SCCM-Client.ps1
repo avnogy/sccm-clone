@@ -23,6 +23,8 @@ if (-not $PSBoundParameters.ContainsKey('UseHTTPS')) { $UseHTTPS = $true }
 
 $script:LogEnabled = $true
 $script:LastDeploymentCommandLine = $null
+$script:ClientScriptHash = ""
+$script:ConfigScriptHash = ""
 
 function Get-FileSha256 {
     param([string]$Path)
@@ -63,6 +65,11 @@ function Write-VerboseLog {
 function Write-ErrorLog {
     param([string]$message)
     Write-Log $message "ERROR"
+}
+
+function Update-LocalPackageHashes {
+    $script:ClientScriptHash = Get-FileSha256 -Path (Join-Path $scriptDir "SCCM-Client.ps1")
+    $script:ConfigScriptHash = Get-FileSha256 -Path (Join-Path $scriptDir "SCCM-Config.ps1")
 }
 
 # Bypass certificate validation for self-signed certs (if using HTTPS)
@@ -165,6 +172,8 @@ function Invoke-SCCMRequest {
                 "Accept" = "*/*"
                 "X-Machine-Name" = $env:COMPUTERNAME
                 "X-Client-Version" = "5.00"
+                "X-Client-Script-Hash" = $script:ClientScriptHash
+                "X-Client-Config-Hash" = $script:ConfigScriptHash
             }
 
             $allHeaders = $defaultHeaders.Clone()
@@ -535,6 +544,7 @@ function Invoke-SMBDeployment {
 try {
     Write-Log "Starting SCCM Client Simulator..."
     Write-Log "Using HTTPS: $UseHTTPS"
+    Update-LocalPackageHashes
 
     # Discover or use configured listener host
     $listenerHost = Find-ListenerHost
