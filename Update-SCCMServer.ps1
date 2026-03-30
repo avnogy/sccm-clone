@@ -216,7 +216,15 @@ function Save-ManagedFile {
     }
 
     Write-Host "Downloading $fileUrl"
-    Invoke-WebRequest -Uri $fileUrl -OutFile $downloadPath -ErrorAction Stop
+    $requestParams = @{
+        Uri         = $fileUrl
+        OutFile     = $downloadPath
+        ErrorAction = "Stop"
+    }
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        $requestParams["UseBasicParsing"] = $true
+    }
+    Invoke-WebRequest @requestParams
 
     if (-not (Test-Path $downloadPath)) {
         throw "Download failed: $downloadPath was not created"

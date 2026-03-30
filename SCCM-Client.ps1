@@ -188,6 +188,10 @@ function Invoke-SCCMRequest {
                 TimeoutSec  = 15
             }
 
+            if ($PSVersionTable.PSVersion.Major -lt 6) {
+                $requestParams["UseBasicParsing"] = $true
+            }
+
             if ($Body) {
                 $requestParams["Body"] = $Body
             }
