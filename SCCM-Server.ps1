@@ -151,12 +151,11 @@ function Write-ClientSyncStatus {
 
     $serverScriptHash = Get-FileSha256 -Path $script:ClientSourcePath
     $serverConfigHash = Get-FileSha256 -Path $script:ConfigSourcePath
-    $clientKey = Get-DeploymentClientKey -Request $Request
     if ($clientScriptHash -eq $serverScriptHash -and $clientConfigHash -eq $serverConfigHash) {
-        Write-Log "CLIENT_IN_SYNC $clientKey"
         return
     }
 
+    $clientKey = Get-DeploymentClientKey -Request $Request
     Write-Log "CLIENT_OUT_OF_SYNC $clientKey client=$clientScriptHash/$clientConfigHash server=$serverScriptHash/$serverConfigHash"
 }
 
