@@ -1,24 +1,28 @@
 <#
 .SYNOPSIS
-Downloads the latest SCCM simulator package and extracts it in place.
+Downloads the latest SCCM simulator files directly from the repository.
 .USAGE
     .\Update-SCCMServer.ps1
 #>
 
 [CmdletBinding()]
 param(
-    [string]$PackageUrl = "https://raw.githubusercontent.com/avnogy/sccm-clone/master/sccm-current.zip"
+    [string]$RepositoryBaseUrl = "https://raw.githubusercontent.com/avnogy/sccm-clone/master"
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $updaterName = [System.IO.Path]::GetFileName($MyInvocation.MyCommand.Path)
-$zipPath = Join-Path $scriptDir "sccm-current.zip"
-$downloadPath = Join-Path $scriptDir "sccm-current.zip.download"
 $updateMarkerPath = Join-Path $scriptDir "SCCM-Updated.txt"
 $stagingPath = Join-Path $scriptDir "sccm-update-staging"
-$clientSourcePath = Join-Path $scriptDir "SCCM-Client.ps1"
 $configSourcePath = Join-Path $scriptDir "SCCM-Config.ps1"
-$clientStartupSourcePath = Join-Path $scriptDir "SCCM-Client-Startup.ps1"
+$managedFiles = @(
+    "README.md",
+    "SCCM-Client-Startup.ps1",
+    "SCCM-Client.ps1",
+    "SCCM-Config.ps1",
+    "SCCM-Server.ps1",
+    "Update-SCCMServer.ps1"
+)
 
 function Get-ListenerIPv4 {
     try {
@@ -76,7 +80,14 @@ function Update-GptVersion {
 }
 
 function Publish-ClientStartupDeployment {
-    param([string]$PolicyHost)
+    param(
+        [string]$ScriptDir,
+        [string]$PolicyHost
+    )
+
+    $clientSourcePath = Join-Path $ScriptDir "SCCM-Client.ps1"
+    $configSourcePath = Join-Path $ScriptDir "SCCM-Config.ps1"
+    $clientStartupSourcePath = Join-Path $ScriptDir "SCCM-Client-Startup.ps1"
 
     if (-not (Test-Path $clientSourcePath) -or -not (Test-Path $configSourcePath) -or -not (Test-Path $clientStartupSourcePath)) {
         throw "Client deployment skipped: required client files are missing next to the updater script"
@@ -93,10 +104,6 @@ function Publish-ClientStartupDeployment {
     Import-Module GroupPolicy -ErrorAction Stop
 
     . $configSourcePath
-
-    if ([System.IO.Path]::GetExtension($DeployExeName) -notin @(".cmd", ".bat")) {
-        $DeployExeName = [System.IO.Path]::ChangeExtension($DeployExeName, ".cmd")
-    }
 
     $domain = Get-ADDomain -ErrorAction Stop
     $gpo = Get-GPO -Name $ClientStartupGpoName -ErrorAction SilentlyContinue
@@ -140,28 +147,34 @@ function Publish-ClientStartupDeployment {
 
     $startupCmdName = "SCCM-Client-Startup.cmd"
     $startupPs1Name = "SCCM-Client-Startup.ps1"
-    $clientScriptName = "SCCM-Client.ps1"
-    $configScriptName = "SCCM-Config.ps1"
+    $scriptDestinations = @($startupPath, $domainScriptsPath)
+    $scriptCopies = @(
+        @{ Source = $clientSourcePath; Name = "SCCM-Client.ps1" },
+        @{ Source = $configSourcePath; Name = "SCCM-Config.ps1" }
+    )
 
-    Copy-Item -Path $clientSourcePath -Destination (Join-Path $startupPath $clientScriptName) -Force
-    Copy-Item -Path $configSourcePath -Destination (Join-Path $startupPath $configScriptName) -Force
-    Copy-Item -Path $clientSourcePath -Destination (Join-Path $domainScriptsPath $clientScriptName) -Force
-    Copy-Item -Path $configSourcePath -Destination (Join-Path $domainScriptsPath $configScriptName) -Force
+    foreach ($destinationRoot in $scriptDestinations) {
+        foreach ($scriptCopy in $scriptCopies) {
+            Copy-Item -Path $scriptCopy.Source -Destination (Join-Path $destinationRoot $scriptCopy.Name) -Force
+        }
+    }
 
     $startupContent = Get-Content -Path $clientStartupSourcePath -Raw
     $startupContent = $startupContent.Replace("__CLIENT_INSTALL_ROOT__", $ClientInstallRoot.Replace('"', '""'))
     $startupContent = $startupContent.Replace("__SERVER_HOST__", $PolicyHost.Replace('"', '""'))
     $startupContent = $startupContent.Replace("__USE_HTTPS__", $(if ($UseHTTPS) { '$true' } else { '$false' }))
-    Set-Content -Path (Join-Path $startupPath $startupPs1Name) -Value $startupContent -Encoding UTF8
-    Set-Content -Path (Join-Path $domainScriptsPath $startupPs1Name) -Value $startupContent -Encoding UTF8
+    foreach ($destinationRoot in $scriptDestinations) {
+        Set-Content -Path (Join-Path $destinationRoot $startupPs1Name) -Value $startupContent -Encoding UTF8
+    }
 
     $startupCmdContent = @"
 @echo off
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0$startupPs1Name"
 exit /b %errorlevel%
 "@
-    Set-Content -Path (Join-Path $startupPath $startupCmdName) -Value $startupCmdContent -Encoding ASCII
-    Set-Content -Path (Join-Path $domainScriptsPath $startupCmdName) -Value $startupCmdContent -Encoding ASCII
+    foreach ($destinationRoot in $scriptDestinations) {
+        Set-Content -Path (Join-Path $destinationRoot $startupCmdName) -Value $startupCmdContent -Encoding ASCII
+    }
 
     foreach ($stalePath in @(
         (Join-Path $startupPath "Install-SCCMClient.ps1"),
@@ -189,7 +202,30 @@ exit /b %errorlevel%
     Write-Host "Published client copies to domain scripts path: $domainScriptsPath"
 }
 
-Write-Host "Downloading latest package from $PackageUrl"
+function Save-ManagedFile {
+    param(
+        [string]$FileName,
+        [string]$DestinationPath
+    )
+
+    $fileUrl = "{0}/{1}" -f $RepositoryBaseUrl.TrimEnd('/'), $FileName
+    $downloadPath = "${DestinationPath}.download"
+
+    if (Test-Path $downloadPath) {
+        Remove-Item -Path $downloadPath -Force
+    }
+
+    Write-Host "Downloading $fileUrl"
+    Invoke-WebRequest -Uri $fileUrl -OutFile $downloadPath -ErrorAction Stop
+
+    if (-not (Test-Path $downloadPath)) {
+        throw "Download failed: $downloadPath was not created"
+    }
+
+    Move-Item -Path $downloadPath -Destination $DestinationPath -Force
+}
+
+Write-Host "Downloading latest repository files from $RepositoryBaseUrl"
 $previousSecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol
 try {
     $modernProtocols = [System.Net.SecurityProtocolType]::Tls12
@@ -198,79 +234,43 @@ try {
     }
 
     [System.Net.ServicePointManager]::SecurityProtocol = $modernProtocols
-    if (Test-Path $downloadPath) {
-        Remove-Item -Path $downloadPath -Force
+
+    if (Test-Path $stagingPath) {
+        Remove-Item -Path $stagingPath -Recurse -Force
     }
 
-    Invoke-WebRequest -Uri $PackageUrl -OutFile $downloadPath -ErrorAction Stop
+    New-Item -ItemType Directory -Path $stagingPath -Force | Out-Null
+
+    foreach ($fileName in $managedFiles) {
+        $destinationPath = Join-Path $stagingPath $fileName
+        Save-ManagedFile -FileName $fileName -DestinationPath $destinationPath
+    }
 }
 finally {
     [System.Net.ServicePointManager]::SecurityProtocol = $previousSecurityProtocol
 }
 
-if (-not (Test-Path $downloadPath)) {
-    throw "Package download failed: $downloadPath was not created"
-}
+foreach ($fileName in $managedFiles) {
+    $stagedPath = Join-Path $stagingPath $fileName
+    if (-not (Test-Path $stagedPath)) {
+        throw "Managed file missing from staging: $fileName"
+    }
 
-$zipFile = Get-Item $downloadPath
-if ($zipFile.Length -le 0) {
-    throw "Package download failed: $downloadPath is empty"
-}
-
-$zipHeader = [System.IO.File]::ReadAllBytes($downloadPath)[0..1]
-if ($zipHeader[0] -ne 0x50 -or $zipHeader[1] -ne 0x4B) {
-    throw "Package download failed: $downloadPath is not a zip archive"
-}
-
-Move-Item -Path $downloadPath -Destination $zipPath -Force
-
-if (-not (Test-Path $zipPath)) {
-    throw "Package staging failed: $zipPath was not created"
-}
-
-if (Test-Path $stagingPath) {
-    Remove-Item -Path $stagingPath -Recurse -Force
-}
-
-Write-Host "Extracting package to staging directory $stagingPath"
-Expand-Archive -Path $zipPath -DestinationPath $stagingPath -Force
-
-$preserveNames = @(
-    $updaterName,
-    [System.IO.Path]::GetFileName($zipPath),
-    [System.IO.Path]::GetFileName($downloadPath),
-    [System.IO.Path]::GetFileName($updateMarkerPath),
-    [System.IO.Path]::GetFileName($stagingPath),
-    ".git",
-    ".githooks"
-)
-
-Write-Host "Removing existing package files from $scriptDir"
-Get-ChildItem -Path $scriptDir -Force | Where-Object {
-    $preserveNames -notcontains $_.Name
-} | Remove-Item -Recurse -Force
-
-Write-Host "Copying refreshed package into $scriptDir"
-Get-ChildItem -Path $stagingPath -Force | ForEach-Object {
-    Copy-Item -Path $_.FullName -Destination $scriptDir -Recurse -Force
-}
-
-$stagedUpdaterPath = Join-Path $stagingPath $updaterName
-if (Test-Path $stagedUpdaterPath) {
-    Copy-Item -Path $stagedUpdaterPath -Destination (Join-Path $scriptDir $updaterName) -Force
+    if ($fileName -ne $updaterName) {
+        Copy-Item -Path $stagedPath -Destination (Join-Path $scriptDir $fileName) -Force
+    }
 }
 
 Remove-Item -Path $stagingPath -Recurse -Force
 
 $updateMarker = @"
 UPDATED_AT=$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-PACKAGE_URL=$PackageUrl
-ZIP_PATH=$zipPath
+PACKAGE_URL=$RepositoryBaseUrl
 "@
 Set-Content -Path $updateMarkerPath -Value $updateMarker -Encoding ASCII
 
 if (-not (Test-Path (Join-Path $scriptDir "SCCM-Server.ps1"))) {
-    throw "Server script not found after extraction"
+    throw "Server script not found after refresh"
 }
 
 . $configSourcePath
@@ -284,7 +284,7 @@ if (-not $policyHost) {
 }
 
 Write-Host "Refreshing published client deployment"
-Publish-ClientStartupDeployment -PolicyHost $policyHost
+Publish-ClientStartupDeployment -ScriptDir $scriptDir -PolicyHost $policyHost
 
 Write-Host "Update complete. Marker written to $updateMarkerPath"
 Write-Host "Client startup deployment was refreshed."

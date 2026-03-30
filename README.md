@@ -58,7 +58,7 @@ If you want the server to automatically roll out the current client script to do
 - `SCCM-Config.ps1`: shared configuration
 - `SCCM-Server.ps1`: mock SCCM server-side listener
 - `SCCM-Client.ps1`: mock SCCM client
-- `Update-SCCMServer.ps1`: downloads the latest zip, replaces the package files in place, and refreshes the published client deployment
+- `Update-SCCMServer.ps1`: downloads the latest managed repo files and refreshes the published client deployment
 
 ## Recording the Two Stages
 
@@ -99,7 +99,7 @@ What happens:
 - the listener returns normal mock SCCM responses
 - the policy endpoint returns a basic success response with no deployment `CommandLine`
 - clients keep generating recurring SCCM-like traffic only
-- the server refreshes a dedicated computer-startup GPO so domain machines pick up the latest `SCCM-Client.ps1` and `SCCM-Config.ps1`
+- the updater is what refreshes the dedicated computer-startup GPO so domain machines pick up the latest `SCCM-Client.ps1` and `SCCM-Config.ps1`
 
 ### Stage 2: Policy Delivery Followed by SMB Fetch and Execution
 
@@ -131,6 +131,7 @@ What happens:
 - every client requests policy, recognizes the deployment path in the response, copies the file over SMB, and executes it
 - each client executes a given deployment path once per client process lifetime, which prevents the same payload from re-running every policy interval
 - the update script refreshes the domain startup deployment so rebooted domain computers pick up the latest client version automatically
+- the updater refreshes a fixed set of repository files directly instead of replacing a local zip bundle
 
 ## Listener Behavior
 
@@ -154,7 +155,7 @@ What happens:
 Notes:
 
 - `-ServeSMBPolicy` enables the stage-2 behavior: the listener sends one deployment policy per client from `/ccm_system/request`.
-- `DeployExeName` from `SCCM-Config.ps1` is normalized to a `.cmd` script if another extension is supplied.
+- `DeployExeName` from `SCCM-Config.ps1` is used as-is in the advertised UNC path.
 - `SMBPolicyHost` in `SCCM-Config.ps1` controls the host part placed in the policy `CommandLine` UNC path. If it is blank, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
 - `SMBShareName`, `DeployExeName`, `ClientStartupGpoName`, and `ClientInstallRoot` in `SCCM-Config.ps1` are server-side config values, not listener arguments.
 - The server does not generate the deployment file. The UNC path must already point to a real payload hosted elsewhere.

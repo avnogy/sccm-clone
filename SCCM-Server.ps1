@@ -21,9 +21,6 @@ param(
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 . "$scriptDir\SCCM-Config.ps1"
 
-if ([System.IO.Path]::GetExtension($DeployExeName) -notin @(".cmd", ".bat")) {
-    $DeployExeName = [System.IO.Path]::ChangeExtension($DeployExeName, ".cmd")
-}
 $script:SMBShareName = $SMBShareName
 $script:DeployExeName = $DeployExeName
 $script:EnableSMB = $ServeSMBPolicy
