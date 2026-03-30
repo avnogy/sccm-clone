@@ -140,25 +140,6 @@ function Get-ClientPackageMetadataXml {
 "@
 }
 
-function Write-ClientSyncStatus {
-    param([System.Net.HttpListenerRequest]$Request)
-
-    $clientScriptHash = $Request.Headers["X-Client-Script-Hash"]
-    $clientConfigHash = $Request.Headers["X-Client-Config-Hash"]
-    if (-not $clientScriptHash -or -not $clientConfigHash) {
-        return
-    }
-
-    $serverScriptHash = Get-FileSha256 -Path $script:ClientSourcePath
-    $serverConfigHash = Get-FileSha256 -Path $script:ConfigSourcePath
-    if ($clientScriptHash -eq $serverScriptHash -and $clientConfigHash -eq $serverConfigHash) {
-        return
-    }
-
-    $clientKey = Get-DeploymentClientKey -Request $Request
-    Write-Log "CLIENT_OUT_OF_SYNC $clientKey client=$clientScriptHash/$clientConfigHash server=$serverScriptHash/$serverConfigHash"
-}
-
 function Get-DeploymentClientKey {
     param([System.Net.HttpListenerRequest]$Request)
 
@@ -327,7 +308,6 @@ function Handle-HttpRequest {
             $context.Request.LocalEndPoint.Address, $context.Request.LocalEndPoint.Port, `
             $request.HttpMethod, $request.Url.PathAndQuery
         Write-Log $logMessage
-        Write-ClientSyncStatus -Request $request
         
         Start-Sleep -Milliseconds $ResponseDelayMs
         
