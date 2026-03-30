@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $sourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $targetDir = "__CLIENT_INSTALL_ROOT__"
 $serverHost = "__SERVER_HOST__"
-$useHttps = [System.Convert]::ToBoolean("__USE_HTTPS__")
+$useHttps = __USE_HTTPS__
 $startupLogPath = Join-Path $targetDir "startup-deploy.log"
 
 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
