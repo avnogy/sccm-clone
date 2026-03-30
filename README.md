@@ -203,11 +203,11 @@ Current defaults from `SCCM-Config.ps1`:
 - HTTP SUP: `8530`
 - HTTPS SUP: `8531`
 - notification TCP: `10123`
-- location request interval: `60` seconds
-- policy request interval: `120` seconds
-- notification interval: `60` seconds
-- update scan interval: `120` seconds
-- heartbeat interval: `240` seconds
+- location request interval: `30` seconds
+- policy request interval: `60` seconds
+- notification interval: `30` seconds
+- update scan interval: `60` seconds
+- heartbeat interval: `120` seconds
 - deployment share path: `C:\SCCMDeploy`
 - deployment share name: `SCCMDeploy`
 - deployment policy host: `SMBPolicyHost` from config, otherwise auto-detect

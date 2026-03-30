@@ -19,11 +19,11 @@ $NotifyPort = 10123
 
 # Traffic Intervals (in seconds)
 $Intervals = @{
-    LocationRequest = 60
-    PolicyRequest   = 120
-    Notification    = 60
-    UpdateScan      = 120
-    Heartbeat       = 240
+    LocationRequest = 30
+    PolicyRequest   = 60
+    Notification    = 30
+    UpdateScan      = 60
+    Heartbeat       = 120
 }
 
 # SMB Deployment Settings
