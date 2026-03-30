@@ -2,7 +2,6 @@ $ErrorActionPreference = "Stop"
 
 $sourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $targetDir = "__CLIENT_INSTALL_ROOT__"
-$serverHost = "__SERVER_HOST__"
 $useHttps = __USE_HTTPS__
 $startupLogPath = Join-Path $targetDir "startup-deploy.log"
 $clientStdOutPath = Join-Path $targetDir "client-stdout.log"
@@ -32,8 +31,7 @@ foreach ($process in $existingProcesses) {
 $argumentList = @(
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",
-    "-File", (Join-Path $targetDir "SCCM-Client.ps1"),
-    "-ServerHost", $serverHost
+    "-File", (Join-Path $targetDir "SCCM-Client.ps1")
 )
 
 if (-not $useHttps) {
@@ -54,7 +52,7 @@ try {
         -PassThru `
         -ErrorAction Stop
 
-    "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Started SCCM client for server $serverHost (PID: $($process.Id))" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
+    "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Started SCCM client (PID: $($process.Id))" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
 } catch {
     "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Failed to start SCCM client: $($_.Exception.Message)" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
     throw

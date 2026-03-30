@@ -14,6 +14,7 @@ The deployment settings are controlled there through:
 - `SMBShareName`
 - `SMBPolicyHost`
 - `DeployExeName`
+- `PublishedClientListenerHost`
 - `ClientStartupGpoName`
 - `ClientInstallRoot`
 
@@ -46,8 +47,6 @@ The client simulator generates:
   - certificate creation and `netsh http add sslcert`
 - For client target discovery:
   - at least one of `nltest`, `LOGONSERVER`, `USERDNSDOMAIN`, or current-domain ADSI lookup must work
-
-If discovery is not convenient in your lab, clients can be pointed directly at the listener with `-ServerHost`.
 
 The listener does not have to run on an actual Domain Controller. It can run on any reachable Windows host that satisfies the requirements above.
 
@@ -91,7 +90,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 # On each client
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-Client.ps1 -ServerHost 192.168.1.10
+.\SCCM-Client.ps1
 ```
 
 What happens:
@@ -120,7 +119,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 # Or, if you want the policy to advertise a specific IP:
 # On each client
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\SCCM-Client.ps1 -ServerHost 192.168.1.10
+.\SCCM-Client.ps1
 ```
 
 What happens:
@@ -157,6 +156,7 @@ Notes:
 - `-ServeSMBPolicy` enables the stage-2 behavior: the listener sends one deployment policy per client from `/ccm_system/request`.
 - `DeployExeName` from `SCCM-Config.ps1` is used as-is in the advertised UNC path.
 - `SMBPolicyHost` in `SCCM-Config.ps1` controls the host part placed in the policy `CommandLine` UNC path. If it is blank, the listener auto-detects a local IPv4 and uses that; if detection fails, it falls back to the computer name.
+- `PublishedClientListenerHost` in `SCCM-Config.ps1` controls the default listener host used by the client.
 - `SMBShareName`, `DeployExeName`, `ClientStartupGpoName`, and `ClientInstallRoot` in `SCCM-Config.ps1` are server-side config values, not listener arguments.
 - The server does not generate the deployment file. The UNC path must already point to a real payload hosted elsewhere.
 
@@ -165,7 +165,7 @@ Notes:
 `SCCM-Client.ps1`:
 
 - tries several methods to discover a target host
-- can be pointed directly at a listener host with `-ServerHost`
+- uses `PublishedClientListenerHost` from config before fallback discovery
 - uses HTTPS by default
 - accepts self-signed certificates when HTTPS is enabled
 - retries HTTP requests according to the shared config
@@ -181,7 +181,6 @@ Notes:
 
 ```powershell
 .\SCCM-Client.ps1
-.\SCCM-Client.ps1 -ServerHost 192.168.1.10
 .\SCCM-Client.ps1 -UseHTTPS:$false
 .\SCCM-Client.ps1 -Verbose
 ```
@@ -189,7 +188,7 @@ Notes:
 Notes:
 
 - there is no client-side deployment flag; deployment behavior is controlled entirely by the server response
-- `-ServerHost` is the simplest way to run several lab clients against one known listener
+- `PublishedClientListenerHost` is the simplest way to aim several lab clients at one known listener
 - the client avoids re-running the exact same deployment path over and over during one session
 - client self-update checks ride on the normal policy response, so there is no extra SMB pull when the published hashes have not changed
 - `.cmd` and `.bat` payloads are executed via `cmd.exe`

@@ -6,13 +6,11 @@ This script discovers or targets a listener host and generates SCCM-like traffic
 including location requests, policy requests, notification polls, update scans, and heartbeats.
 .USAGE
     .\SCCM-Client.ps1
-    .\SCCM-Client.ps1 -ServerHost 192.168.1.10
     .\SCCM-Client.ps1 -Verbose
 #>
 
 [CmdletBinding()]
 param(
-    [string]$ServerHost = "",
     [switch]$UseHTTPS
 )
 
@@ -78,9 +76,9 @@ if ($UseHTTPS) {
 
 # Listener host discovery functions
 function Find-ListenerHost {
-    if ($ServerHost) {
-        Write-Log "Using configured listener host: $ServerHost"
-        return $ServerHost
+    if ($PublishedClientListenerHost) {
+        Write-Log "Using listener host from config: $PublishedClientListenerHost"
+        return $PublishedClientListenerHost
     }
 
     Write-Log "Discovering listener host..."
@@ -292,8 +290,7 @@ function Invoke-ClientSelfUpdate {
         $argumentList = @(
             "-NoProfile",
             "-ExecutionPolicy", "Bypass",
-            "-File", $localClientPath,
-            "-ServerHost", $ListenerHost
+            "-File", $localClientPath
         )
 
         if (-not $UseHTTPS) {

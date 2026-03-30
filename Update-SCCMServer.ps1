@@ -81,8 +81,7 @@ function Update-GptVersion {
 
 function Publish-ClientStartupDeployment {
     param(
-        [string]$ScriptDir,
-        [string]$ListenerHost
+        [string]$ScriptDir
     )
 
     $clientSourcePath = Join-Path $ScriptDir "SCCM-Client.ps1"
@@ -161,7 +160,6 @@ function Publish-ClientStartupDeployment {
 
     $startupContent = Get-Content -Path $clientStartupSourcePath -Raw
     $startupContent = $startupContent.Replace("__CLIENT_INSTALL_ROOT__", $ClientInstallRoot.Replace('"', '""'))
-    $startupContent = $startupContent.Replace("__SERVER_HOST__", $ListenerHost.Replace('"', '""'))
     $startupContent = $startupContent.Replace("__USE_HTTPS__", $(if ($UseHTTPS) { '$true' } else { '$false' }))
     foreach ($destinationRoot in $scriptDestinations) {
         Set-Content -Path (Join-Path $destinationRoot $startupPs1Name) -Value $startupContent -Encoding UTF8
@@ -283,13 +281,8 @@ if (-not (Test-Path (Join-Path $scriptDir "SCCM-Server.ps1"))) {
 
 . $configSourcePath
 
-$listenerHost = Get-ListenerIPv4
-if (-not $listenerHost) {
-    $listenerHost = $env:COMPUTERNAME
-}
-
 Write-Host "Refreshing published client deployment"
-Publish-ClientStartupDeployment -ScriptDir $scriptDir -ListenerHost $listenerHost
+Publish-ClientStartupDeployment -ScriptDir $scriptDir
 
 Write-Host "Update complete. Marker written to $updateMarkerPath"
 Write-Host "Client startup deployment was refreshed."
