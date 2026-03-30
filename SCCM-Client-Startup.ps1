@@ -4,9 +4,12 @@ $sourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $targetDir = "__CLIENT_INSTALL_ROOT__"
 $useHttps = __USE_HTTPS__
 $startupLogPath = Join-Path $targetDir "startup-deploy.log"
+$clientLogPath = Join-Path $targetDir "client.log"
 
+if (Test-Path $targetDir) {
+    Remove-Item -Path $targetDir -Recurse -Force
+}
 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
-if (Test-Path $startupLogPath) { Remove-Item -Path $startupLogPath -Force }
 "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Startup deployment invoked" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
 
 Copy-Item -Path (Join-Path $sourceDir "SCCM-Client.ps1") -Destination (Join-Path $targetDir "SCCM-Client.ps1") -Force
@@ -39,8 +42,7 @@ if (-not $useHttps) {
 
 $clientPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 $quotedClientPowerShell = '"' + $clientPowerShell + '"'
-$quotedLogPathForSet = $startupLogPath.Replace('"', '""')
-$quotedStartupLogPath = '"' + $startupLogPath + '"'
+$quotedLogPathForSet = $clientLogPath.Replace('"', '""')
 $commandLine = ($argumentList | ForEach-Object {
     if ($_ -match '\s') {
         '"' + $_.Replace('"', '""') + '"'
@@ -52,7 +54,7 @@ $commandLine = ($argumentList | ForEach-Object {
 try {
     $process = Start-Process `
         -FilePath $env:ComSpec `
-        -ArgumentList "/c set ""SCCM_CLIENT_LOG_PATH=$quotedLogPathForSet"" && $quotedClientPowerShell $commandLine >> $quotedStartupLogPath 2>&1" `
+        -ArgumentList "/c set ""SCCM_CLIENT_LOG_PATH=$quotedLogPathForSet"" && $quotedClientPowerShell $commandLine" `
         -WindowStyle Hidden `
         -PassThru `
         -ErrorAction Stop
