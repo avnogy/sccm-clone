@@ -131,7 +131,7 @@ What happens:
 - every client requests policy, recognizes the deployment path in the response, copies the file over SMB, and executes it
 - each client executes a given deployment path once per client process lifetime, which prevents the same payload from re-running every policy interval
 - the update script refreshes the domain startup deployment so rebooted domain computers pick up the latest client version automatically
-- the updater refreshes a fixed set of repository files directly instead of replacing a local zip bundle
+- the updater refreshes a fixed set of repository files directly from the repository
 
 ## Listener Behavior
 
