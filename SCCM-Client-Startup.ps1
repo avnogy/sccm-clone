@@ -4,8 +4,6 @@ $sourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $targetDir = "__CLIENT_INSTALL_ROOT__"
 $useHttps = __USE_HTTPS__
 $startupLogPath = Join-Path $targetDir "startup-deploy.log"
-$clientStdOutPath = Join-Path $targetDir "client-stdout.log"
-$clientStdErrPath = Join-Path $targetDir "client-stderr.log"
 
 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
 "[$(Get-Date -Format "yyyy-MM-dd HH:mm:ss")] Startup deployment invoked" | Out-File -FilePath $startupLogPath -Append -Encoding ASCII
@@ -39,16 +37,21 @@ if (-not $useHttps) {
 }
 
 $clientPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-if (Test-Path $clientStdOutPath) { Remove-Item -Path $clientStdOutPath -Force }
-if (Test-Path $clientStdErrPath) { Remove-Item -Path $clientStdErrPath -Force }
+$quotedClientPowerShell = '"' + $clientPowerShell + '"'
+$quotedStartupLogPath = '"' + $startupLogPath + '"'
+$commandLine = ($argumentList | ForEach-Object {
+    if ($_ -match '\s') {
+        '"' + $_.Replace('"', '""') + '"'
+    } else {
+        $_
+    }
+}) -join ' '
 
 try {
     $process = Start-Process `
-        -FilePath $clientPowerShell `
-        -ArgumentList $argumentList `
+        -FilePath $env:ComSpec `
+        -ArgumentList "/c $quotedClientPowerShell $commandLine >> $quotedStartupLogPath 2>&1" `
         -WindowStyle Hidden `
-        -RedirectStandardOutput $clientStdOutPath `
-        -RedirectStandardError $clientStdErrPath `
         -PassThru `
         -ErrorAction Stop
 
