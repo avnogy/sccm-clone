@@ -167,12 +167,10 @@ $keyBase64
 "@
 
             Write-Host ""
-            Write-Host "SELF-SIGNED TLS PRIVATE KEY PEM:"
             Write-Host $pem
             Write-Host ""
-        } elseif ($rsaPrivateKey -and ($rsaPrivateKey | Get-Member -Name "ExportPkcs8PrivateKeyPem" -ErrorAction SilentlyContinue)) {
+        } elseif ($rsaPrivateKey -and ($rsaPrivateKey | Get-Member -Name "ExportPkcs8PrivateKey" -ErrorAction SilentlyContinue)) {
             Write-Host ""
-            Write-Host "SELF-SIGNED TLS PRIVATE KEY PEM:"
             Write-Host ($rsaPrivateKey.ExportPkcs8PrivateKeyPem())
             Write-Host ""
         } else {
