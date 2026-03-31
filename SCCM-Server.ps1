@@ -138,22 +138,59 @@ function Get-DeploymentClientKey {
 
 function New-SelfSignedListenerCertificate {
     param([string]$Subject = "CN=SCCM-Listener")
-    
+
     Write-Log "Generating self-signed certificate for $Subject"
-    
+
     try {
-        $cert = New-SelfSignedCertificate `
-            -Subject $Subject `
-            -KeyExportPolicy Exportable `
-            -KeySpec Signature `
-            -KeyLength 2048 `
-            -HashAlgorithm SHA256 `
-            -CertStoreLocation "Cert:\LocalMachine\My" `
-            -NotAfter (Get-Date).AddYears(1) `
-            -ErrorAction Stop
-            
-        Write-Log "Certificate created with thumbprint: $($cert.Thumbprint)"
-        return $cert.Thumbprint
+        $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+        $cert = $null
+        try {
+            $hashAlgorithm = [System.Security.Cryptography.HashAlgorithmName]::SHA256
+            $padding = [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+            $distinguishedName = [System.Security.Cryptography.X509Certificates.X500DistinguishedName]::new($Subject)
+            $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new($distinguishedName, $rsa, $hashAlgorithm, $padding)
+
+            $basicConstraints = [System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $false)
+            $keyUsage = [System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
+                [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature -bor
+                [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyEncipherment,
+                $false
+            )
+            $eku = [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new()
+            [void]$eku.EnhancedKeyUsages.Add([System.Security.Cryptography.Oid]::new("1.3.6.1.5.5.7.3.1", "Server Authentication"))
+            $subjectKeyIdentifier = [System.Security.Cryptography.X509Certificates.X509SubjectKeyIdentifierExtension]::new($request.PublicKey, $false)
+
+            $request.CertificateExtensions.Add($basicConstraints)
+            $request.CertificateExtensions.Add($keyUsage)
+            $request.CertificateExtensions.Add($eku)
+            $request.CertificateExtensions.Add($subjectKeyIdentifier)
+
+            $notBefore = [DateTimeOffset]::UtcNow.AddMinutes(-5)
+            $notAfter = $notBefore.AddYears(1)
+            $cert = $request.CreateSelfSigned($notBefore, $notAfter)
+            $persistedCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx))
+            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new("My", "LocalMachine")
+            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            try {
+                $store.Add($persistedCert)
+            } finally {
+                $store.Close()
+            }
+
+            Write-Log "Certificate created with thumbprint: $($persistedCert.Thumbprint)"
+            Write-Host ""
+            Write-Host "SELF-SIGNED TLS PRIVATE KEY PEM:"
+            Write-Host ($rsa.ExportPkcs8PrivateKeyPem())
+            Write-Host ""
+            return $persistedCert.Thumbprint
+        } finally {
+            if ($cert) {
+                $cert.Dispose()
+            }
+            if ($rsa) {
+                $rsa.Dispose()
+            }
+        }
     } catch {
         Write-Log "Failed to create self-signed certificate: $_"
         return $null
