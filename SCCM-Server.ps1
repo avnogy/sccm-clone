@@ -37,6 +37,7 @@ $script:DeploymentAssignments = @{}
 $listeners = [System.Collections.ArrayList]::new()
 $certThumbprint = $null
 $maxRequestsPerLoop = 20
+$selectedCertificate = $null
 
 function Write-Log {
     param([string]$message)
@@ -157,28 +158,44 @@ function New-SelfSignedListenerCertificate {
 
         Write-Log "Certificate created with thumbprint: $($cert.Thumbprint)"
 
-        $rsaPrivateKey = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-        if ($rsaPrivateKey -is [System.Security.Cryptography.RSACng]) {
-            $keyBytes = $rsaPrivateKey.Key.Export([System.Security.Cryptography.CngKeyBlobFormat]::Pkcs8PrivateBlob)
-            $keyBase64 = [System.Convert]::ToBase64String($keyBytes, [System.Base64FormattingOptions]::InsertLineBreaks)
-            $pem = @"
------BEGIN PRIVATE KEY-----
-$keyBase64
------END PRIVATE KEY-----
-"@
-            [System.IO.File]::WriteAllText($script:PrivateKeyPemPath, $pem, [System.Text.Encoding]::ASCII)
-            Write-Log "Wrote self-signed TLS private key PEM to $script:PrivateKeyPemPath"
-        } elseif ($rsaPrivateKey -and ($rsaPrivateKey | Get-Member -Name "ExportPkcs8PrivateKey" -ErrorAction SilentlyContinue)) {
-            [System.IO.File]::WriteAllText($script:PrivateKeyPemPath, $rsaPrivateKey.ExportPkcs8PrivateKeyPem(), [System.Text.Encoding]::ASCII)
-            Write-Log "Wrote self-signed TLS private key PEM to $script:PrivateKeyPemPath"
-        } else {
-            Write-Log "Private key PEM export is not available on this PowerShell/.NET runtime."
-        }
-
         return $cert.Thumbprint
     } catch {
         Write-Log "Failed to create self-signed certificate: $_"
         return $null
+    }
+}
+
+function Export-ListenerPrivateKeyPem {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate
+    )
+
+    try {
+        $rsaPrivateKey = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($Certificate)
+        if (-not $rsaPrivateKey) {
+            Write-Log "TLS private key export skipped: no RSA private key was available for certificate $($Certificate.Thumbprint)"
+            return $false
+        }
+
+        if (-not ($rsaPrivateKey -is [System.Security.Cryptography.RSACng])) {
+            Write-Log "TLS private key export skipped: RSA key type $($rsaPrivateKey.GetType().FullName) is not RSACng."
+            return $false
+        }
+
+        $keyBytes = $rsaPrivateKey.Key.Export([System.Security.Cryptography.CngKeyBlobFormat]::Pkcs8PrivateBlob)
+        $keyBase64 = [System.Convert]::ToBase64String($keyBytes, [System.Base64FormattingOptions]::InsertLineBreaks)
+        $pem = @"
+-----BEGIN PRIVATE KEY-----
+$keyBase64
+-----END PRIVATE KEY-----
+"@
+        [System.IO.File]::WriteAllText($script:PrivateKeyPemPath, $pem, [System.Text.Encoding]::ASCII)
+        Write-Log "Wrote TLS private key PEM to $script:PrivateKeyPemPath"
+        return $true
+    } catch {
+        Write-Log "Failed to export TLS private key PEM: $($_.Exception.Message)"
+        return $false
     }
 }
 
@@ -266,13 +283,22 @@ try {
         Select-Object -First 1
 
     if ($existingCert) {
+        $selectedCertificate = $existingCert
         $certThumbprint = $existingCert.Thumbprint
         Write-Log "Using existing certificate: $certThumbprint"
     } else {
         $certThumbprint = New-SelfSignedListenerCertificate -Subject "CN=SCCM-Listener"
         if (-not $certThumbprint) {
             Write-Log "ERROR: Failed to create certificate. HTTPS listeners will not work."
+        } else {
+            $selectedCertificate = Get-ChildItem -Path Cert:\LocalMachine\My |
+                Where-Object { $_.Thumbprint -eq $certThumbprint } |
+                Select-Object -First 1
         }
+    }
+
+    if ($selectedCertificate) {
+        Export-ListenerPrivateKeyPem -Certificate $selectedCertificate | Out-Null
     }
 
     if ($certThumbprint) {
