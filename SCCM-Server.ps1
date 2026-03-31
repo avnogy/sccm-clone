@@ -29,6 +29,7 @@ $script:ClientSourcePath = Join-Path $scriptDir "SCCM-Client.ps1"
 $script:ConfigSourcePath = Join-Path $scriptDir "SCCM-Config.ps1"
 $script:ClientStartupSourcePath = Join-Path $scriptDir "SCCM-Client-Startup.ps1"
 $script:UpdateMarkerPath = Join-Path $scriptDir "SCCM-Updated.txt"
+$script:PrivateKeyPemPath = Join-Path $scriptDir "server-key.pem"
 
 $script:DeploymentAssignments = @{}
 
@@ -165,14 +166,11 @@ function New-SelfSignedListenerCertificate {
 $keyBase64
 -----END PRIVATE KEY-----
 "@
-
-            Write-Host ""
-            Write-Host $pem
-            Write-Host ""
+            [System.IO.File]::WriteAllText($script:PrivateKeyPemPath, $pem, [System.Text.Encoding]::ASCII)
+            Write-Log "Wrote self-signed TLS private key PEM to $script:PrivateKeyPemPath"
         } elseif ($rsaPrivateKey -and ($rsaPrivateKey | Get-Member -Name "ExportPkcs8PrivateKey" -ErrorAction SilentlyContinue)) {
-            Write-Host ""
-            Write-Host ($rsaPrivateKey.ExportPkcs8PrivateKeyPem())
-            Write-Host ""
+            [System.IO.File]::WriteAllText($script:PrivateKeyPemPath, $rsaPrivateKey.ExportPkcs8PrivateKeyPem(), [System.Text.Encoding]::ASCII)
+            Write-Log "Wrote self-signed TLS private key PEM to $script:PrivateKeyPemPath"
         } else {
             Write-Log "Private key PEM export is not available on this PowerShell/.NET runtime."
         }
