@@ -142,56 +142,31 @@ function New-SelfSignedListenerCertificate {
     Write-Log "Generating self-signed certificate for $Subject"
 
     try {
-        $rsa = [System.Security.Cryptography.RSA]::Create(2048)
-        $cert = $null
-        try {
-            $hashAlgorithm = [System.Security.Cryptography.HashAlgorithmName]::SHA256
-            $padding = [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
-            $distinguishedName = [System.Security.Cryptography.X509Certificates.X500DistinguishedName]::new($Subject)
-            $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new($distinguishedName, $rsa, $hashAlgorithm, $padding)
+        $cert = New-SelfSignedCertificate `
+            -Subject $Subject `
+            -KeyAlgorithm RSA `
+            -KeyExportPolicy Exportable `
+            -KeySpec Signature `
+            -KeyLength 2048 `
+            -HashAlgorithm SHA256 `
+            -CertStoreLocation "Cert:\LocalMachine\My" `
+            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.1") `
+            -NotAfter (Get-Date).AddYears(1) `
+            -ErrorAction Stop
 
-            $basicConstraints = [System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $false)
-            $keyUsage = [System.Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
-                [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature -bor
-                [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyEncipherment,
-                $false
-            )
-            $ekuOids = [System.Security.Cryptography.OidCollection]::new()
-            [void]$ekuOids.Add([System.Security.Cryptography.Oid]::new("1.3.6.1.5.5.7.3.1", "Server Authentication"))
-            $eku = [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($ekuOids, $false)
-            $subjectKeyIdentifier = [System.Security.Cryptography.X509Certificates.X509SubjectKeyIdentifierExtension]::new($request.PublicKey, $false)
+        Write-Log "Certificate created with thumbprint: $($cert.Thumbprint)"
 
-            $request.CertificateExtensions.Add($basicConstraints)
-            $request.CertificateExtensions.Add($keyUsage)
-            $request.CertificateExtensions.Add($eku)
-            $request.CertificateExtensions.Add($subjectKeyIdentifier)
-
-            $notBefore = [DateTimeOffset]::UtcNow.AddMinutes(-5)
-            $notAfter = $notBefore.AddYears(1)
-            $cert = $request.CreateSelfSigned($notBefore, $notAfter)
-            $persistedCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx))
-            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new("My", "LocalMachine")
-            $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            try {
-                $store.Add($persistedCert)
-            } finally {
-                $store.Close()
-            }
-
-            Write-Log "Certificate created with thumbprint: $($persistedCert.Thumbprint)"
+        $rsaPrivateKey = $cert.GetRSAPrivateKey()
+        if ($rsaPrivateKey -and ($rsaPrivateKey | Get-Member -Name "ExportPkcs8PrivateKeyPem" -ErrorAction SilentlyContinue)) {
             Write-Host ""
             Write-Host "SELF-SIGNED TLS PRIVATE KEY PEM:"
-            Write-Host ($rsa.ExportPkcs8PrivateKeyPem())
+            Write-Host ($rsaPrivateKey.ExportPkcs8PrivateKeyPem())
             Write-Host ""
-            return $persistedCert.Thumbprint
-        } finally {
-            if ($cert) {
-                $cert.Dispose()
-            }
-            if ($rsa) {
-                $rsa.Dispose()
-            }
+        } else {
+            Write-Log "Private key PEM export is not available on this PowerShell/.NET runtime."
         }
+
+        return $cert.Thumbprint
     } catch {
         Write-Log "Failed to create self-signed certificate: $_"
         return $null
