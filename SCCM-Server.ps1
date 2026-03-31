@@ -156,7 +156,7 @@ function New-SelfSignedListenerCertificate {
 
         Write-Log "Certificate created with thumbprint: $($cert.Thumbprint)"
 
-        $rsaPrivateKey = $cert.GetRSAPrivateKey()
+        $rsaPrivateKey = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
         if ($rsaPrivateKey -and ($rsaPrivateKey | Get-Member -Name "ExportPkcs8PrivateKeyPem" -ErrorAction SilentlyContinue)) {
             Write-Host ""
             Write-Host "SELF-SIGNED TLS PRIVATE KEY PEM:"
