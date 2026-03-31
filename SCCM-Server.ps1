@@ -156,8 +156,9 @@ function New-SelfSignedListenerCertificate {
                 [System.Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyEncipherment,
                 $false
             )
-            $eku = [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new()
-            [void]$eku.EnhancedKeyUsages.Add([System.Security.Cryptography.Oid]::new("1.3.6.1.5.5.7.3.1", "Server Authentication"))
+            $ekuOids = [System.Security.Cryptography.OidCollection]::new()
+            [void]$ekuOids.Add([System.Security.Cryptography.Oid]::new("1.3.6.1.5.5.7.3.1", "Server Authentication"))
+            $eku = [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($ekuOids, $false)
             $subjectKeyIdentifier = [System.Security.Cryptography.X509Certificates.X509SubjectKeyIdentifierExtension]::new($request.PublicKey, $false)
 
             $request.CertificateExtensions.Add($basicConstraints)
