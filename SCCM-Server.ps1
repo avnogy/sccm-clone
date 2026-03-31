@@ -199,7 +199,7 @@ function New-SelfSignedListenerCertificate {
 
 function Add-ListenerCertificateBinding {
     param([string]$Thumbprint, [int]$Port)
-    
+
     try {
         $appGuid = [guid]::NewGuid().ToString("B")
         $command = "netsh http add sslcert ipport=0.0.0.0:$Port certhash=$Thumbprint appid='$appGuid'"
@@ -215,7 +215,7 @@ function Add-ListenerCertificateBinding {
 
 function Remove-ListenerCertificateBinding {
     param([int]$Port)
-    
+
     try {
         $command = "netsh http delete sslcert ipport=0.0.0.0:$Port"
         Invoke-Expression $command | Out-Null
@@ -227,7 +227,7 @@ function Remove-ListenerCertificateBinding {
 
 function Cleanup {
     Write-Log "Cleaning up resources..."
-    
+
     foreach ($listener in $listeners) {
         try {
             if ($listener -is [System.Net.HttpListener]) {
@@ -242,12 +242,12 @@ function Cleanup {
             }
         } catch { }
     }
-    
+
     if ($certThumbprint) {
         Remove-ListenerCertificateBinding -Port $HTTPSPort
         Remove-ListenerCertificateBinding -Port $SUPSHTTPSPort
     }
-    
+
     Write-Log "Cleanup complete."
 }
 
@@ -279,7 +279,7 @@ try {
     $existingCert = Get-ChildItem -Path Cert:\LocalMachine\My |
         Where-Object { $_.Subject -like "*SCCM*" -and $_.NotAfter -gt (Get-Date) } |
         Select-Object -First 1
-        
+
     if ($existingCert) {
         $certThumbprint = $existingCert.Thumbprint
         Write-Log "Using existing certificate: $certThumbprint"
@@ -289,12 +289,12 @@ try {
             Write-Log "ERROR: Failed to create certificate. HTTPS listeners will not work."
         }
     }
-    
+
     if ($certThumbprint) {
         Add-ListenerCertificateBinding -Thumbprint $certThumbprint -Port $HTTPSPort
         Add-ListenerCertificateBinding -Thumbprint $certThumbprint -Port $SUPSHTTPSPort
     }
-    
+
 } catch {
     Write-Log "ERROR during certificate setup: $_"
 }
@@ -313,23 +313,23 @@ function Receive-HttpRequest {
         [int]$SupHttpPort,
         [int]$SupHttpsPort
     )
-    
+
     try {
         $request = $context.Request
         $response = $context.Response
-        
+
         $remoteEndPoint = $context.Request.RemoteEndPoint
         $logMessage = "{0}:{1} -> {2}:{3} {4} {5}" -f `
             $remoteEndPoint.Address, $remoteEndPoint.Port, `
             $context.Request.LocalEndPoint.Address, $context.Request.LocalEndPoint.Port, `
             $request.HttpMethod, $request.Url.PathAndQuery
         Write-Log $logMessage
-        
+
         Start-Sleep -Milliseconds $ResponseDelayMs
-        
+
         $path = $request.Url.AbsolutePath.ToLower()
         $responseString = ""
-        
+
         switch ($path) {
             "/sms_ls.srf" {
                 if ($request.HttpMethod -eq "POST") {
@@ -357,7 +357,7 @@ $mpHistory    </Capabilities>
                     $response.StatusDescription = "Method Not Allowed"
                 }
             }
-            
+
             "/ccm_system/request" {
                 if ($request.HttpMethod -eq "POST") {
                     $policyAssignments = New-PaddedXmlEntries -ElementName "AssignmentID" -Count $PolicyResponsePaddingEntries -Prefix "ADV"
@@ -410,7 +410,7 @@ $policyAssignments    </Assignments>
                     $response.StatusDescription = "Method Not Allowed"
                 }
             }
-            
+
             "/SimpleAuthwebservice/SimpleAuth.asmx" {
                 if ($request.HttpMethod -eq "POST") {
                     $updateLocations = New-PaddedXmlEntries -ElementName "Location" -Count $UpdateResponsePaddingEntries -Prefix "SUP"
@@ -435,7 +435,7 @@ $updateLocations                </Locations>
                     $response.StatusDescription = "Method Not Allowed"
                 }
             }
-            
+
             "/sms_mp" {
                 if ($request.HttpMethod -eq "POST") {
                     $heartbeatDetails = New-PaddedXmlEntries -ElementName "Record" -Count $HeartbeatResponsePaddingEntries -Prefix "DDR"
@@ -459,7 +459,7 @@ $heartbeatDetails            </Records>
                     $response.StatusDescription = "Method Not Allowed"
                 }
             }
-            
+
             "/ccm_status" {
                 if ($request.HttpMethod -eq "POST") {
                     $response.StatusCode = 202
@@ -469,21 +469,21 @@ $heartbeatDetails            </Records>
                     $response.StatusDescription = "Method Not Allowed"
                 }
             }
-            
+
             default {
-                $responseString = "<HTML><BODY>SCCM Listener - Endpoint not implemented</BODY></HTML>"
+                $responseString = "<HTML><BODY>Deployment Updated Successfully.</BODY></HTML>"
                 $response.ContentType = "text/html"
                 $response.StatusCode = 200
                 $response.StatusDescription = "OK"
             }
         }
-        
+
         if ($responseString) {
             $buffer = [System.Text.Encoding]::UTF8.GetBytes($responseString)
             $response.ContentLength64 = $buffer.Length
             $response.OutputStream.Write($buffer, 0, $buffer.Length)
         }
-        
+
         $response.OutputStream.Close()
     } catch {
         Write-Log "Error processing request: $_"
